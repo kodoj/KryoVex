@@ -1,6 +1,6 @@
 /**
  * Copies root `dist/` (main + renderer build) into `release/app/dist/` for electron-builder.
- * Keeps a single build output at repo root (use `npm run electron-dev` after `npm run build`).
+ * Keeps a single build output at repo root so `electron .` works after `npm run build`.
  */
 import fs from 'node:fs';
 import path from 'node:path';

@@ -22,9 +22,7 @@
     "dev": "cross-env NODE_ENV=development BUILD_TARGET=dev node scripts/dev-fast.mjs",
     "dev:watch": "cross-env NODE_ENV=development BUILD_TARGET=dev concurrently --names \"TSUP,VITE\" --prefix \"[{time} {name}]\" --timestamps --timestamp-format \"HH:mm:ss.SSS\" \"tsup --watch\" \"vite\"",
     "test": "cross-env NODE_ENV=development jest",
-    "preelectron-dev": "node scripts/check-main-built.mjs",
     "electron-dev": "electron .",
-    "preelectron-trace": "node scripts/check-main-built.mjs",
     "electron-trace": "electron --trace-warnings .",
     "typecheck": "tsc --noEmit",
     "icons": "node scripts/sync-app-icon.mjs",
@@ -48,7 +46,6 @@
     ]
   },
   "build": {
-    "electronVersion": "41.1.1",
     "productName": "KryoVex",
     "icon": "icon.png",
     "appId": "com.kryovex.app",

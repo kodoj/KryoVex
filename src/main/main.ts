@@ -405,10 +405,6 @@ let myWindow = null as any;
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
-  // Often looks like "won't launch" — a previous instance is still running (or stuck in Task Manager).
-  process.stderr.write(
-    'KryoVex: Another instance is already running. Close the app or end KryoVex.exe in Task Manager.\n'
-  );
   app.quit();
 } else {
   app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
