@@ -10,8 +10,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const isDevelopment = mode === 'development';
   const isDebugProd = env.DEBUG_PROD === 'true';
-  const packageJson = require('./package.json') as { version: string; dependencies?: Record<string, string> };
-  const dependencies = packageJson.dependencies || {};
+  const packageJson = require('./package.json') as { version: string };
 
   const plugins: import('vite').PluginOption[] = [
     react(),
@@ -47,7 +46,6 @@ export default defineConfig(({ mode }) => {
       minify: 'terser',
       rollupOptions: {
         input: resolve(__dirname, 'src/renderer/index.html'),
-        external: Object.keys(dependencies),
         output: {
           format: 'es',
           entryFileNames: 'renderer.js',
