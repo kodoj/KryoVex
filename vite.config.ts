@@ -46,6 +46,8 @@ export default defineConfig(({ mode }) => {
       minify: 'terser',
       rollupOptions: {
         input: resolve(__dirname, 'src/renderer/index.html'),
+        // Do not set `external` to all package.json deps: the Electron renderer loads
+        // ESM like a browser and cannot resolve bare imports (e.g. `lodash`) at runtime.
         output: {
           format: 'es',
           entryFileNames: 'renderer.js',
