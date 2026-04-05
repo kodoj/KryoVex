@@ -1,9 +1,18 @@
-import { CashIcon } from '@heroicons/react/solid';
-import { useState } from 'react';
+import { BanknotesIcon } from '@heroicons/react/24/solid';
+import { useEffect, useMemo, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
-import { classNames } from 'renderer/components/content/shared/filters/inventoryFunctions';
-import { tradeUpSetPossible } from 'renderer/store/actions/tradeUpActions';
+import { classNames } from 'renderer/components/content/shared/filters/inventoryFunctions.ts';
+import {
+  getSteamEconomySrcSet,
+  IMAGE_FALLBACK_DATA_URI,
+} from 'renderer/functionsClasses/createCSGOImage.ts';
+import { markImageError, useCs2Image } from 'renderer/hooks/useCs2Image.ts';
+import { selectInventory } from 'renderer/store/slices/inventory.ts';
+import { selectPricing } from 'renderer/store/slices/pricing.ts';
+import { selectSettings } from 'renderer/store/slices/settings.ts';
+import { pricingInventoryKey } from 'renderer/functionsClasses/prices.ts';
+import { selectTradeUp, tradeUpSetPossible } from 'renderer/store/slices/tradeUp.ts';
 
 const rarityShort = {
   'Factory New': 'FN',
@@ -13,145 +22,196 @@ const rarityShort = {
   'Battle-Scarred': 'BS',
 };
 
+function OutcomeImg({
+  srcKey,
+  className,
+  sizes,
+}: {
+  srcKey: string;
+  className: string;
+  sizes: string;
+}) {
+  const normalizedSrcKey = useMemo(() => {
+    const raw = String(srcKey || '').trim();
+    if (!raw) return '';
+    // Legacy trade-up backup data often uses insecure media URLs.
+    // Force HTTPS so Electron doesn't drop them as mixed/insecure content.
+    if (raw.startsWith('http://')) return `https://${raw.slice('http://'.length)}`;
+    return raw;
+  }, [srcKey]);
+  const src = useCs2Image(normalizedSrcKey, { fallback: IMAGE_FALLBACK_DATA_URI });
+  const srcSet = useMemo(() => getSteamEconomySrcSet(src), [src]);
+  return (
+    <img
+      className={className}
+      src={src}
+      srcSet={srcSet}
+      sizes={sizes}
+      decoding="sync"
+      alt=""
+      draggable={false}
+      onError={(e) => {
+        markImageError(normalizedSrcKey);
+        const img = e.currentTarget;
+        img.onerror = null;
+        img.src = IMAGE_FALLBACK_DATA_URI;
+      }}
+    />
+  );
+}
+
 export default function PossibleOutcomes() {
-  const pricesResult = useSelector((state: any) => state.pricingReducer);
-  const tradeUpData = useSelector((state: any) => state.tradeUpReducer);
-  const settingsData = useSelector((state: any) => state.settingsReducer);
-  const [outcomesRequested, setOutcomesRequested] = useState(0);
+  const pricesResult = useSelector(selectPricing);
+  const tradeUpData = useSelector(selectTradeUp);
+  const settingsData = useSelector(selectSettings);
+  const inventory = useSelector(selectInventory);
   const dispatch = useDispatch();
-  console.log(tradeUpData.possibleOutcomes.length, tradeUpData.tradeUpProducts.length)
 
-  let totalPrice = 0;
-  tradeUpData.tradeUpProducts.forEach((element) => {
-    totalPrice += pricesResult.prices[element.item_name + element.item_wear_name || '']?.['steam_listing'];
-  });
-  totalPrice;
-
-  tradeUpData.possibleOutcomes.forEach((element) => {
-    element['profit_cal'] =
-      (100 / (totalPrice * 100)) *
-      (pricesResult?.prices[element.item_name + element.item_wear_name || '']?.['steam_listing'] * 100);
-  });
-  tradeUpData.possibleOutcomes.sort(function (a, b) {
-    var keyA = a.profit_cal,
-      keyB = b.profit_cal;
-    if (keyA < keyB) return 1;
-    if (keyA > keyB) return -1;
-    return 0;
-  });
-
-  // Get outcomes
-  if (
-    tradeUpData.tradeUpProducts.length > 0
-  ) {
-    if (outcomesRequested != tradeUpData.tradeUpProducts.length) {
-      setOutcomesRequested(tradeUpData.tradeUpProducts.length);
-      window.electron.ipcRenderer
-        .getPossibleOutcomes(tradeUpData.tradeUpProducts)
-        .then((messageValue) => {
-          dispatch(tradeUpSetPossible(messageValue));
-        });
+  const inventoryImageByNameWear = useMemo(() => {
+    const map = new Map<string, string>();
+    const rows = [...(inventory.inventory || []), ...(inventory.storageInventoryRaw || [])] as any[];
+    for (const row of rows) {
+      const key = `${row?.item_name || ''}|${row?.item_wear_name || ''}`;
+      if (!key || map.has(key)) continue;
+      if (row?.item_url) map.set(key, row.item_url);
     }
-  }
+    return map;
+  }, [inventory.inventory, inventory.storageInventoryRaw]);
 
-  if (outcomesRequested != tradeUpData.tradeUpProducts.length) {
-    setOutcomesRequested(tradeUpData.tradeUpProducts.length)
-  }
+  const priceSource = settingsData?.source?.title ?? 'steam_listing';
+  const currencyRate = settingsData.currencyPrice?.[settingsData.currency] ?? 1;
+
+  const totalPrice = useMemo(() => {
+    let total = 0;
+    for (const element of tradeUpData.tradeUpProducts) {
+      const row = pricesResult.prices[pricingInventoryKey(element)] as unknown as
+        | Record<string, number>
+        | undefined;
+      const raw = row?.[priceSource] ?? row?.steam_listing;
+      const n = typeof raw === 'number' && !Number.isNaN(raw) ? raw : 0;
+      total += n * currencyRate;
+    }
+    return total;
+  }, [tradeUpData.tradeUpProducts, pricesResult.prices, priceSource, currencyRate]);
+
+  const outcomesSorted = useMemo(() => {
+    const denom = totalPrice > 0 ? totalPrice : 1;
+    return [...tradeUpData.possibleOutcomes]
+      .map((element: any) => {
+        const row = pricesResult.prices[pricingInventoryKey(element)] as unknown as
+        | Record<string, number>
+        | undefined;
+        const raw = row?.[priceSource] ?? row?.steam_listing;
+        const n = typeof raw === 'number' && !Number.isNaN(raw) ? raw : 0;
+        const price = n * currencyRate;
+        const profit_cal = (100 / denom) * price;
+        return { ...element, profit_cal };
+      })
+      .sort((a: any, b: any) => (b.profit_cal ?? 0) - (a.profit_cal ?? 0));
+  }, [tradeUpData.possibleOutcomes, pricesResult.prices, totalPrice, priceSource, currencyRate]);
+
+  const lastOutcomesKeyRef = useRef<string>('');
+  useEffect(() => {
+    if (tradeUpData.tradeUpProducts.length === 0) {
+      lastOutcomesKeyRef.current = '';
+      return;
+    }
+    const key = tradeUpData.tradeUpProductsIDS.join('|');
+    if (lastOutcomesKeyRef.current === key) return;
+    lastOutcomesKeyRef.current = key;
+    window.electron.ipcRenderer
+      .getPossibleOutcomes(tradeUpData.tradeUpProducts)
+      .then((messageValue) => {
+        dispatch(tradeUpSetPossible(messageValue));
+      });
+  }, [dispatch, tradeUpData.tradeUpProducts, tradeUpData.tradeUpProductsIDS]);
 
   return (
-    <div>
-      <h2 className="text-gray-500  text-xs font-medium uppercase tracking-wide dark:text-gray-400">
+    <div className="min-w-0">
+      <h2 className="text-[10px] font-medium uppercase leading-normal tracking-wider text-gray-500 dark:text-gray-400 sm:text-xs">
         Possible outcomes
       </h2>
-      {tradeUpData.possibleOutcomes.length != 0 ? (
-        <ul role="list" className="mt-3 grid grid-cols-1 gap-5 sm:gap-6 ">
-          {tradeUpData.possibleOutcomes.map((project, index) => (
-            <li key={index} className="col-span-1 flex shadow-sm rounded-md">
-              <Link
-                to={{
-                  pathname:
-                    'https://steamcommunity.com/market/listings/730/' +
-                    project.item_name +
-                    ' (' +
-                    project.item_wear_name +
-                    ')',
-                }}
-                target="_blank"
+      {outcomesSorted.length != 0 ? (
+        <ul
+          role="list"
+          className="mt-2 divide-y divide-gray-700/60 overflow-hidden rounded-lg border border-gray-700/90 bg-dark-level-three/70 text-xs sm:text-sm shadow-[0_4px_24px_rgba(0,0,0,0.35)] ring-1 ring-gray-900/80"
+        >
+          {outcomesSorted.map((project: any, index: number) => {
+            const marketHash = `${project.item_name} (${project.item_wear_name})`.replaceAll(
+              '(Holo/Foil)',
+              '(Holo-Foil)'
+            );
+            const marketPath = `https://steamcommunity.com/market/listings/730/${encodeURIComponent(marketHash)}`;
+            const imgSrc =
+              inventoryImageByNameWear.get(`${project.item_name || ''}|${project.item_wear_name || ''}`) ||
+              project.image ||
+              '';
+            return (
+              <li
+                key={index}
+                className="antialiased flex min-w-0 items-start gap-2 px-2 py-2 transition-colors hover:bg-dark-level-four/45 sm:px-2.5 sm:py-2.5"
               >
-                <div className=" from-gray-100 to-gray-300 dark:from-gray-300 dark:to-gray-400 flex-shrink-0 h-full  flex items-center justify-center w-16 dark:border-opacity-50 text-white border-t border-l border-b border-gray-200 rounded-l-md dark:bg-dark-level-two bg-gradient-to-t">
-                  <img
-                    className="max-w-none h-11 w-11  object-cover"
-                    src={project.image}
+                <Link
+                  to={{ pathname: marketPath }}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="relative h-11 w-11 shrink-0 overflow-hidden rounded-md bg-dark-level-two/90 ring-1 ring-gray-700/40"
+                  title={`View ${project.item_name} (${project.item_wear_name}) on Steam Community Market`}
+                >
+                  <OutcomeImg
+                    className="h-full w-full origin-center scale-[1.22] object-contain object-center"
+                    srcKey={imgSrc}
+                    sizes="44px"
                   />
-                </div>
-              </Link>
-              <div className="flex-1 dark:bg-dark-level-two dark:border-opacity-50 flex items-center justify-between border-t border-r border-b border-gray-200 bg-white rounded-r-md truncate">
-                <div className="flex-1 px-4 py-2 text-sm truncate">
-                  <div className="flex justify-between">
-                    <span className="text-gray-900 font-medium hover:text-gray-600 dark:text-dark-white">
+                </Link>
+                <div className="min-w-0 flex-1 pt-px">
+                  <div className="flex items-start justify-between gap-1.5">
+                    <span className="min-w-0 flex-1 break-words font-normal leading-snug text-zinc-100 sm:font-medium">
                       {project.item_name}
                     </span>
                     <span
-                      className={classNames(
-                        project?.profit_cal > 100
-                          ? 'bg-green-500'
-                          : 'bg-red-500',
-                        'w-2.5 h-2.5 flex-shrink-0 rounded-full'
-                      )}
-                      aria-hidden="true"
-                    />
-
-                  </div>
-                  <div className="flex justify-between">
-                    <p className="text-gray-500">
-                      {project.percentage} % |{' '}
-                      {rarityShort[project.item_wear_name]} |{' '}
-                      {project.float_chance.toString()?.substr(1, 8)}
-                    </p>
-                    <div className="flex items-center">
-                      <p className="text-gray-500">
-                        <CashIcon className="w-4 text-gray-500 h-4 mr-1" />
-                      </p>
-                      <p className="text-gray-500">
+                      className="inline-flex shrink-0 items-center gap-1 tabular-nums text-zinc-200"
+                      title="Listed outcome price as percent of total selected input value"
+                    >
+                      <span
+                        className={classNames(
+                          project?.profit_cal > 100 ? 'bg-green-500' : 'bg-red-500',
+                          'h-2 w-2 shrink-0 rounded-full'
+                        )}
+                        aria-hidden="true"
+                      />
+                      <BanknotesIcon className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" aria-hidden />
+                      <span className="text-xs font-medium sm:text-sm">
                         {new Intl.NumberFormat(settingsData.locale, {
                           style: 'decimal',
                           maximumFractionDigits: 2,
-                        }).format(project?.profit_cal)}{' '}
+                        }).format(Number.isFinite(project?.profit_cal) ? project.profit_cal : 0)}{' '}
                         %
-                      </p>
-                    </div>
+                      </span>
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs tabular-nums leading-snug text-gray-500 dark:text-gray-400">
+                    {project.percentage}% ·{' '}
+                    {rarityShort[project.item_wear_name as keyof typeof rarityShort] ?? project.item_wear_name} ·{' '}
+                    {typeof project.float_chance === 'number' && Number.isFinite(project.float_chance)
+                      ? project.float_chance.toFixed(6)
+                      : String(project.float_chance ?? '').slice(0, 10)}
                   </div>
                 </div>
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       ) : (
-        <ul role="list" className="mt-3 grid grid-cols-1 gap-5 sm:gap-6 ">
-          <li key={9999} className="col-span-1 flex shadow-sm rounded-md">
-            <div className=" flex-shrink-0 h-full  flex items-center justify-center w-16 dark:border-opacity-50 text-white border-t border-l border-b border-gray-200 rounded-l-md border-dotted dark:bg-dark-level-two border-r">
-              <div className="max-w-none h-11 w-11  object-cover" />
-            </div>
-            <div className="flex-1 dark:bg-dark-level-two border-dotted dark:border-opacity-50 flex items-center justify-between border-t border-r border-b border-gray-200 bg-white rounded-r-md truncate">
-              <div className="flex-1 px-4 py-2 text-sm truncate">
-                <div className="flex justify-between">
-                  <span className="text-gray-900 font-medium hover:text-gray-600 dark:text-dark-white">
-                    Add 1 to see the results
-                  </span>
-                </div>
-                <div className="flex justify-start">
-                  <p className="text-gray-500"></p>
-                  <div className="flex items-center">
-                    <p className="text-gray-500">
-                      Prices are the SCM prices
-                    </p>
-                    <p className="text-gray-500"></p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </li>
-        </ul>
+        <div
+          className="mt-2 rounded-lg border border-dashed border-gray-600/70 bg-dark-level-three/70 px-2.5 py-2.5 text-left shadow-[0_4px_24px_rgba(0,0,0,0.35)] ring-1 ring-gray-900/80 sm:px-3 sm:py-3"
+          role="status"
+        >
+          <p className="text-sm font-medium leading-snug text-zinc-100">Select items to see possible outcomes</p>
+          <p className="mt-1.5 text-xs leading-snug break-words text-gray-500 dark:text-gray-400">
+            Percentages come from the trade-up sim. Dollar values use your pricing source ({priceSource}).
+          </p>
+        </div>
       )}
     </div>
   );

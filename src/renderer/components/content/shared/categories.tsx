@@ -14,13 +14,13 @@ export const itemCategories = [
   {
     value: 'weapon_cases',
     name: 'Containers',
-    bgColorClass: 'bg-indigo-500',
+    bgColorClass: 'bg-kryo-ice-500',
     href: '#',
   },
   {
     value: 'patches',
     name: 'Patches',
-    bgColorClass: 'bg-indigo-200',
+    bgColorClass: 'bg-kryo-ice-200',
     href: '#',
   },
   {

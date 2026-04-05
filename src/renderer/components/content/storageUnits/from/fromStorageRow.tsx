@@ -1,34 +1,35 @@
-import { LightningBoltIcon, XIcon } from '@heroicons/react/solid';
+import { BoltIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import { useDispatch, useSelector } from 'react-redux';
-import { moveFromAddRemove } from 'renderer/store/actions/moveFromActions';
-import { RowPrice } from '../../Inventory/inventoryRows/priceRow';
-import { RowStickersPatches } from '../../Inventory/inventoryRows/stickerPatchesRow';
-import { RowStorage } from '../../Inventory/inventoryRows/storageRow';
-import { RowRarity } from '../../Inventory/inventoryRows/rarityRow';
-import { classNames } from '../../shared/filters/inventoryFunctions';
-import { RowFloat } from '../../Inventory/inventoryRows/floatRow';
-import { RowTradehold } from '../../Inventory/inventoryRows/tradeholdRow';
-import { RowQTY } from '../../Inventory/inventoryRows/QTYRow';
-import { RowCollections } from '../../Inventory/inventoryRows/collectionsRow';
-import { RowProduct } from '../../Inventory/inventoryRows/rowName';
-import { ReducerManager } from 'renderer/functionsClasses/reducerManager';
-import { State } from 'renderer/interfaces/states';
+import { moveFromAddRemove, selectMoveFrom } from 'renderer/store/slices/moveFrom.ts';
+import { RowPrice } from '../../Inventory/inventoryRows/priceRow.tsx';
+import { RowStickersPatches } from '../../Inventory/inventoryRows/stickerPatchesRow.tsx';
+import { RowStorage } from '../../Inventory/inventoryRows/storageRow.tsx';
+import { RowRarity } from '../../Inventory/inventoryRows/rarityRow.tsx';
+import { classNames } from '../../shared/filters/inventoryFunctions.ts';
+import { RowFloat } from '../../Inventory/inventoryRows/floatRow.tsx';
+import { RowTradehold } from '../../Inventory/inventoryRows/tradeholdRow.tsx';
+import { RowQTY } from '../../Inventory/inventoryRows/QTYRow.tsx';
+import { RowCollections } from '../../Inventory/inventoryRows/collectionsRow.tsx';
+import { RowProduct } from '../../Inventory/inventoryRows/rowName.tsx';
+import { selectInventory } from 'renderer/store/slices/inventory.ts';
+import { selectSettings } from 'renderer/store/slices/settings.ts';
+import { selectPricing } from 'renderer/store/slices/pricing.ts';
 
 function content({ projectRow, index }) {
   const dispatch = useDispatch();
-  const ReducerClass = new ReducerManager(useSelector)
-  const currentState: State = ReducerClass.getStorage()
-  const fromReducer = currentState.moveFromReducer
-  const inventory = currentState.inventoryReducer
-
+  const fromReducer = useSelector(selectMoveFrom)
+  const inventory = useSelector(selectInventory)
+  const settings = useSelector(selectSettings)
+  const pricing = useSelector(selectPricing)
 
   async function returnField(fieldValue) {
     fieldValue = parseInt(fieldValue);
     let totalToGo = 1000 - inventory.inventory.length;
-    for (const [, value] of Object.entries(fromReducer.totalToMove)) {
-      let valued = value as any;
+    const moveRows = Array.isArray(fromReducer.totalToMove) ? fromReducer.totalToMove : [];
+    for (const value of moveRows) {
+      const valued = value as any;
       if (valued[0] != projectRow.item_id) {
-        totalToGo -= valued[2].length;
+        totalToGo -= Array.isArray(valued[2]) ? valued[2].length : 0;
       }
     }
 
@@ -51,75 +52,76 @@ function content({ projectRow, index }) {
 
     let listToReturn = [] as any;
     if (returnValue > 0) {
-      listToReturn = projectRow.combined_ids.slice(0, returnValue);
+      const ids = Array.isArray(projectRow.combined_ids) ? projectRow.combined_ids : [];
+      listToReturn = ids.slice(0, returnValue);
     }
 
     dispatch(
       moveFromAddRemove(
-        projectRow.storage_id,
-        projectRow.item_id,
-        listToReturn,
-        projectRow.item_name
+        {
+         casketID: projectRow.storage_id,
+          itemID: projectRow.item_id,
+          toMove: listToReturn,
+          itemName: projectRow.item_name
+        }
       )
     );
   }
   
-
   const isEmpty =
     fromReducer.totalToMove.filter((row) => row[0] == projectRow.item_id)
       .length == 0;
 
   let totalFieldValue = 0;
   if (isEmpty == false) {
-    totalFieldValue = fromReducer.totalToMove.filter(
-      (row) => row[0] == projectRow.item_id
-    )[0][2].length;
+    const row = fromReducer.totalToMove.filter((r) => r[0] == projectRow.item_id)[0];
+    totalFieldValue = Array.isArray(row?.[2]) ? row[2].length : 0;
   }
 
   return (
     <>
 
       <RowProduct itemRow={projectRow} />
-      <RowCollections itemRow={projectRow} settingsData={currentState.settingsReducer}/>
-      <RowPrice itemRow={projectRow} settingsData={currentState.settingsReducer} pricesReducer={currentState.pricingReducer} />
-      <RowStickersPatches itemRow={projectRow} settingsData={currentState.settingsReducer} />
-      <RowFloat itemRow={projectRow} settingsData={currentState.settingsReducer}/>
-      <RowRarity itemRow={projectRow} settingsData={currentState.settingsReducer} />
-      <RowStorage itemRow={projectRow} settingsData={currentState.settingsReducer} />
-      <RowTradehold itemRow={projectRow} settingsData={currentState.settingsReducer}/>
+      <RowCollections itemRow={projectRow} settingsData={settings}/>
+      <RowPrice itemRow={projectRow} settingsData={settings} pricesReducer={pricing} />
+      <RowStickersPatches itemRow={projectRow} settingsData={settings} />
+      <RowFloat itemRow={projectRow} settingsData={settings}/>
+      <RowRarity itemRow={projectRow} settingsData={settings} />
+      <RowStorage itemRow={projectRow} settingsData={settings} />
+      <RowTradehold itemRow={projectRow} settingsData={settings}/>
       <RowQTY itemRow={projectRow}/>
 
-      <td className="table-cell px-6 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 hover:text-gray-200 text-right">
-        <div className="flex justify-center rounded-full drop-shadow-lg">
-          <div>
-            <input
-              type="text"
-              name="postal-code"
-              id="postal-code"
-              autoComplete="off"
-              value={isEmpty ? '' : totalFieldValue}
-              placeholder="0"
-              onChange={(e) => returnField(e.target.value)}
-              className=" block w-full border rounded sm:text-sm text-gray-500 text-center border-gray-400 dark:bg-dark-level-two dark:text-dark-white"
-            />
-          </div>
+      <td className="table-cell px-1 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 hover:text-gray-200 text-right align-middle">
+        <div className="flex justify-center">
+          <input
+            type="text"
+            name="postal-code"
+            id="postal-code"
+            autoComplete="off"
+            value={isEmpty ? '' : totalFieldValue}
+            placeholder="0"
+            onChange={(e) => returnField(e.target.value)}
+            className="block w-16 border rounded sm:text-sm text-gray-500 text-center border-gray-400 dark:bg-dark-level-two dark:text-dark-white"
+          />
         </div>
       </td>
-      <td className="table-cell px-6 py-3 text-sm text-gray-500 dark:text-gray-400 font-medium">
-        <div className="flex justify-center">
+      <td className="table-cell px-1 py-3 text-sm text-gray-500 dark:text-gray-400 font-medium align-middle">
+        <div className="flex flex-row items-center justify-center gap-0.5">
           <button
+            type="button"
             onClick={() => returnField(1000)}
             id={`fire-${index}`}
             className={classNames(
+              'p-0 m-0 border-0 bg-transparent shadow-none rounded-none inline-flex items-center justify-center',
               1000 -
                 inventory.inventory.length -
-                fromReducer.totalItemsToMove ==
-                0 || totalFieldValue == projectRow.combined_QTY
+                fromReducer.totalItemsToMove ===
+                0 || totalFieldValue === projectRow.combined_QTY
                 ? 'pointer-events-none hidden'
-                : `fireButton`
+                : ''
             )}
           >
-            <LightningBoltIcon
+            <BoltIcon
               className={classNames(
                 isEmpty ? 'h-5 w-5' : 'h-4 w-4',
                 'text-gray-400 dark:text-gray-500 hover:text-yellow-400 dark:hover:text-yellow-400'
@@ -127,16 +129,16 @@ function content({ projectRow, index }) {
               aria-hidden="true"
             />
           </button>
-        </div>
-        <div className="flex justify-center">
           <button
+            type="button"
             onClick={() => returnField(0)}
             className={classNames(
+              'p-0 m-0 border-0 bg-transparent shadow-none rounded-none inline-flex items-center justify-center',
               isEmpty ? 'pointer-events-none hidden' : 'removeXButton'
             )}
             id={`removeX-${index}`}
           >
-            <XIcon
+            <XMarkIcon
               className={classNames(
                 1000 -
                   inventory.inventory.length -
@@ -151,7 +153,6 @@ function content({ projectRow, index }) {
           </button>
         </div>
       </td>
-      <td className="hidden md:px-6 py-3 whitespace-nowrap text-right text-sm font-medium"></td>
     </>
   );
 }

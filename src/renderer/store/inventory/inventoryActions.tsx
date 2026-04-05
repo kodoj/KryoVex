@@ -1,4 +1,4 @@
-import { SetInventory } from "./inventoryInterfaces"
+import { SetInventory } from "./inventoryInterfaces.tsx"
 
 export const setInventoryAction = (forwardPackage: any): SetInventory => {
     return {

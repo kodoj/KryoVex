@@ -1,32 +1,32 @@
 import {
-  ClipboardCheckIcon,
-  ClipboardCopyIcon,
-  ExternalLinkIcon,
+  ClipboardDocumentCheckIcon,
+  ClipboardDocumentIcon,
+  ArrowTopRightOnSquareIcon,
   LockClosedIcon,
-} from '@heroicons/react/solid';
+} from '@heroicons/react/24/solid';
 import { useEffect, useState } from 'react';
 import QRCode from 'react-qr-code';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { Link } from 'react-router-dom';
-import { LoadingButton } from 'renderer/components/content/shared/animations';
-import { classNames } from 'renderer/components/content/shared/filters/inventoryFunctions';
-import NotificationElement from 'renderer/components/content/shared/modals & notifcations/notification';
-import SteamLogo from 'renderer/components/content/shared/steamLogo';
-import { ReducerManager } from 'renderer/functionsClasses/reducerManager';
-import { State } from 'renderer/interfaces/states';
+import { LoadingButton } from 'renderer/components/content/shared/animations.tsx';
+import { btnDefault, btnPrimary } from 'renderer/components/content/shared/buttonStyles.ts';
+import { classNames } from 'renderer/components/content/shared/filters/inventoryFunctions.ts';
+import NotificationElement from 'renderer/components/content/shared/modals-notifcations/notification.tsx';
+import SteamLogo from 'renderer/components/content/shared/steamLogo.tsx';
 import {
   HandleLoginObjectClass,
   LoginCommand,
   LoginCommandReturnPackage,
   LoginNotificationObject,
   LoginOptions,
-} from 'shared/Interfaces.tsx/store';
-import { handleSuccess } from './HandleSuccess';
-import SteamCloseModal from './closeSteamModal';
-import LoginTabs from './components/LoginTabs';
-import ConfirmModal from './confirmLoginModal';
-import { LoginMethod } from './types/LoginMethod';
-useEffect;
+} from 'shared/Interfaces-tsx/store.ts';
+import { handleSuccess } from './HandleSuccess.ts';
+import SteamCloseModal from './closeSteamModal.tsx';
+import LoginTabs from './components/LoginTabs.tsx';
+import ConfirmModal from './confirmLoginModal.tsx';
+import { LoginMethod } from './types/LoginMethod.ts';
+import { store } from 'renderer/store/configureStore.ts';
+
 const loginResponseObject: LoginNotificationObject = {
   loggedIn: {
     success: true,
@@ -70,7 +70,14 @@ const loginResponseObject: LoginNotificationObject = {
   },
 };
 
-export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
+interface LoginFormProps {
+  isLock: any;
+  autoLoginNonce: number;
+  replaceLock: () => void;
+  runDeleteUser: (user: string) => void;
+}
+
+export default function LoginForm({ isLock, autoLoginNonce, replaceLock, runDeleteUser }: LoginFormProps) {
   // Usestate
   isLock;
   replaceLock;
@@ -88,8 +95,7 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
   const [getLoadingButton, setLoadingButton] = useState(false);
   const [secretEnabled, setSecretEnabled] = useState(false);
 
-  const ReducerClass = new ReducerManager(useSelector);
-  const currentState: State = ReducerClass.getStorage();
+  const currentState = store.getState();
   // Handle login
   const dispatch = useDispatch();
 
@@ -168,6 +174,10 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
     setLoadingButton(false);
   }
   async function validateWebToken() {
+    // Saved-account / refresh-token logins should bypass webtoken validation.
+    if (lockedUsername) {
+      return '';
+    }
     let clientjstokenToSend = clientjstoken as any;
     // Validate web token
     if (loginMethod == 'WEBTOKEN') {
@@ -195,11 +205,24 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
   }
 
   let hasChosenAccountLoginKey = false;
-  if (isLock.length == 2 && isLock[1] != undefined) {
+  let lockedUsername = '';
+  if (Array.isArray(isLock) && isLock.length >= 2 && isLock[0]) {
     hasChosenAccountLoginKey = true;
+    lockedUsername = String(isLock[0]);
+  } else if (typeof isLock === 'string') {
+    lockedUsername = isLock;
   }
-  hasChosenAccountLoginKey;
-  isLock = isLock[0];
+
+  // When a saved account card is clicked, auto-attempt login with that lock.
+  useEffect(() => {
+    if (!autoLoginNonce) return;
+    if (!lockedUsername) return;
+    // Ensure we don't accidentally route through WEBTOKEN validation when auto-logging in.
+    setLoginMethod('REGULAR');
+    setClientjstoken('');
+    onSubmit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLoginNonce]);
   const [closeSteamOpen, setCloseSteamOpen] = useState(false);
   const [hasAskedCloseSteam, setHasAskedCloseSteam] = useState(false);
   setLoadingButton;
@@ -207,7 +230,7 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
   async function onSubmit() {
     setLoadingButton(true);
 
-    if (!hasAskedCloseSteam && currentState.settingsReducer.steamLoginShow) {
+    if (!hasAskedCloseSteam && currentState.settings.steamLoginShow) {
       setHasAskedCloseSteam(true);
       const steamRunning = await window.electron.ipcRenderer.checkSteam();
       console.log('steam running', steamRunning);
@@ -220,8 +243,8 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
     let usernameToSend = username as any;
     let passwordToSend = password as any;
     let storePasswordToSend = storeRefreshToken as any;
-    if (isLock != '') {
-      usernameToSend = isLock;
+    if (lockedUsername != '') {
+      usernameToSend = lockedUsername;
       passwordToSend = null;
       storePasswordToSend = true;
     }
@@ -239,10 +262,7 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
     const HandleClass = new HandleLogin(responseStatus.responseStatus);
     HandleClass.relevantFunction();
     if (responseStatus.responseStatus == 'loggedIn') {
-      handleSuccess(
-        responseStatus.returnPackage as LoginCommandReturnPackage,
-        dispatch,
-        currentState
+      handleSuccess(responseStatus.returnPackage as LoginCommandReturnPackage, dispatch,
       );
     } else {
       handleError();
@@ -263,24 +283,26 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
 
   const [seenOnce, setOnce] = useState(false);
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('REGULAR');
-  const [sendSubmit, shouldSubmit] = useState(false);
+  const [defaultLoginMethod, setDefaultLoginMethod] = useState<LoginMethod>('REGULAR');
   const [qrURL, setQrURL] = useState('');
-  if (seenOnce == false) {
-    document.addEventListener('keyup', ({ key }) => {
-      if (key == 'Enter') {
-        shouldSubmit(true);
-      }
-    });
+  useEffect(() => {
+    if (seenOnce) return;
     setOnce(true);
-  }
-
-  if (sendSubmit) {
-    onSubmit();
-    shouldSubmit(false);
-  }
+    // Load default login method (persisted) once.
+    window.electron.store
+      .get('login.defaultMethod')
+      .then((val: any) => {
+        if (val === 'REGULAR' || val === 'QR' || val === 'WEBTOKEN') {
+          setDefaultLoginMethod(val);
+          setLoginMethod(val);
+        }
+      })
+      .catch(() => {});
+  }, [seenOnce]);
 
   async function handleSubmit(e) {
     e.preventDefault();
+    await onSubmit();
   }
 
   /* useEffect(() => {
@@ -288,21 +310,15 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
       setCloseSteamOpen(window.electron.ipcRenderer.checkSteam())
     }
   }, [closeSteamOpen]); */
-  // setOpen(true)
-  setQrURL;
-  qrURL;
-
   useEffect(() => {
-
     if (loginMethod !== 'QR') {
       return;
     }
-
-
-    window.electron.ipcRenderer.once('qrLogin:show', (pack) => {
-      setQrURL(pack);
+    // Preload __wrapListener calls func(...args) only (no synthetic event) — first arg is the URL string.
+    window.electron.ipcRenderer.once('qrLogin:show', (...args: unknown[]) => {
+      const pack = typeof args[0] === 'string' ? args[0] : '';
+      setQrURL(pack || '');
     });
-
     window.electron.ipcRenderer
       .startQRLogin(storeRefreshToken)
       .then((responseStatus) => {
@@ -311,16 +327,11 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
         const HandleClass = new HandleLogin(responseStatus.responseStatus);
         HandleClass.relevantFunction();
         if (responseStatus.responseStatus == 'loggedIn') {
-          handleSuccess(
-            responseStatus.returnPackage as LoginCommandReturnPackage,
-            dispatch,
-            currentState
-          );
+          handleSuccess(responseStatus.returnPackage as LoginCommandReturnPackage, dispatch);
         } else {
           handleError();
         }
       });
-
     return () => {
       window.electron.ipcRenderer.cancelQRLogin();
     };
@@ -342,32 +353,51 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
       <div className="min-h-full flex items-center  pt-32 justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full">
           <div>
-            <SteamLogo />
+            <div className="flex flex-col items-center gap-6">
+              <SteamLogo />
+            </div>
             <LoginTabs
               selectedTab={loginMethod}
               setSelectedTab={setLoginMethod}
             />
-            <h2 className="mt-6 text-center dark:text-dark-white text-3xl font-extrabold text-gray-900">
+            <div className="mt-2 text-center text-xs text-gray-500 dark:text-gray-400">
+              Default: <span className="font-medium text-gray-300">{defaultLoginMethod.toLowerCase()}</span>
+            </div>
+            <h2 className="mt-6 text-center text-4xl font-extrabold tracking-tight text-gray-900 antialiased dark:text-dark-white [text-shadow:none]">
               {loginMethod === 'REGULAR'
                 ? 'Connect to Steam'
                 : loginMethod === 'QR'
                 ? 'Scan QR Code'
                 : 'Connect from browser'}
             </h2>
-            <p className="mt-2 text-center text-sm text-gray-600">
+            <p className="mt-2 text-center text-base text-gray-600 dark:text-gray-300">
               {loginMethod === 'REGULAR'
-                ? 'The application needs to have an active Steam connection to manage your CSGO items. You should not have any games open on the Steam account.'
+                ? 'The application needs to have an active Steam connection to manage your CS2 items. You should not have any games open on the Steam account.'
                 : loginMethod === 'QR'
-                ? 'Scan the QR code with your Steam mobile app. You should be logged into the account you wish to connect Casemove with.'
-                : 'Open the URL by clicking on the button, or by copying it to the clipboard. You should be logged into the account you wish to connect Casemove with. Paste the entire string below.'}
+                ? 'Scan the QR code with your Steam mobile app. You should be logged into the account you wish to connect KryoVex with.'
+                : 'Open the URL by clicking on the button, or by copying it to the clipboard. You should be logged into the account you wish to connect KryoVex with. Paste the entire string below.'}
             </p>
           </div>
 
-          <form className="mt-8 mb-6" onSubmit={(e) => handleSubmit(e)}>
+          <form className="mt-8 w-full mb-6" onSubmit={(e) => handleSubmit(e)}>
             <input type="hidden" name="remember" defaultValue="true" />
             {loginMethod === 'REGULAR' ? (
-              <div className="rounded-md mb-6">
-                <div>
+              <div className="mb-6">
+                <div className="flex justify-center pb-3">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300 select-none">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 shrink-0 rounded border-white/20 bg-white/5"
+                      checked={defaultLoginMethod === 'REGULAR'}
+                      onChange={() => {
+                        setDefaultLoginMethod('REGULAR');
+                        window.electron.store.set('login.defaultMethod', 'REGULAR');
+                      }}
+                    />
+                    Set Regular as default
+                  </label>
+                </div>
+                <div className="overflow-hidden rounded-md border border-gray-300 dark:border-opacity-50">
                   <label htmlFor="email-address" className="sr-only">
                     Username
                   </label>
@@ -377,11 +407,10 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
                     onChange={(e) => updateUsername(e.target.value)}
                     spellCheck={false}
                     required
-                    value={isLock == '' ? username : isLock}
-                    className="appearance-none dark:bg-dark-level-one dark:text-dark-white dark:bg-dark-level-one  dark:border-opacity-50 rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                    value={lockedUsername == '' ? username : lockedUsername}
+                    className="relative block w-full appearance-none rounded-none border-0 border-b border-gray-300 bg-white px-3 py-2.5 text-gray-900 placeholder-gray-500 focus:z-10 focus:border-kryo-ice-400 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-kryo-ice-400 dark:border-opacity-50 dark:bg-dark-level-one dark:text-dark-white sm:text-sm"
                     placeholder="Username"
                   />
-                </div>
                 {!hasChosenAccountLoginKey ? (
                   <div>
                     <label htmlFor="password" className="sr-only">
@@ -395,8 +424,8 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
                       onChange={(e) => updatePassword(e.target.value)}
                       autoComplete="current-password"
                       required
-                      value={isLock == '' ? password : '~{nA?HJjb]7hB7-'}
-                      className="appearance-none dark:text-dark-white rounded-none dark:bg-dark-level-one  dark:border-opacity-50 relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900  focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                      value={lockedUsername == '' ? password : '~{nA?HJjb]7hB7-'}
+                      className="relative block w-full appearance-none rounded-none border-0 border-b border-gray-300 bg-white px-3 py-2.5 text-gray-900 placeholder-gray-500 focus:z-10 focus:border-kryo-ice-400 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-kryo-ice-400 dark:border-opacity-50 dark:bg-dark-level-one dark:text-dark-white sm:text-sm"
                       placeholder="Password"
                     />
                   </div>
@@ -415,7 +444,7 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
                       onChange={(e) => setAuthCode(e.target.value)}
                       spellCheck={false}
                       required
-                      className="appearance-none rounded-none dark:bg-dark-level-one dark:text-dark-white dark:border-opacity-50 relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                      className="relative block w-full appearance-none rounded-none border-0 bg-white px-3 py-2.5 text-gray-900 placeholder-gray-500 focus:z-10 focus:border-kryo-ice-400 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-kryo-ice-400 dark:bg-dark-level-one dark:text-dark-white sm:text-sm"
                       placeholder="Authcode (optional)"
                     />
                   </div>
@@ -427,7 +456,6 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
                     </span>
                   </div>
                 )}
-
                 {!hasChosenAccountLoginKey ? (
                   <div className={classNames(secretEnabled ? '' : 'hidden')}>
                     <label htmlFor="secret" className="sr-only">
@@ -440,20 +468,35 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
                       onChange={(e) => setSharedSecret(e.target.value)}
                       spellCheck={false}
                       required
-                      className="appearance-none rounded-none dark:bg-dark-level-one dark:text-dark-white dark:border-opacity-50 relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                      className="relative block w-full appearance-none rounded-none border-0 border-t border-gray-300 bg-white px-3 py-2.5 text-gray-900 placeholder-gray-500 focus:z-10 focus:border-kryo-ice-400 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-kryo-ice-400 dark:border-opacity-50 dark:bg-dark-level-one dark:text-dark-white sm:text-sm"
                       placeholder="Shared Secret (If you don't know what this is, leave it empty.)"
                     />
                   </div>
                 ) : (
                   ''
                 )}
+                </div>
               </div>
             ) : loginMethod === 'WEBTOKEN' ? (
-              <div className="rounded-md mb-6">
-                <div className="mt-1 flex rounded-md shadow-sm">
-                  <div className="relative flex items-stretch flex-grow focus-within:z-10">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <ClipboardCheckIcon
+              <div className="mb-6">
+                <div className="flex justify-center pb-3">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300 select-none">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 shrink-0 rounded border-white/20 bg-white/5"
+                      checked={defaultLoginMethod === 'WEBTOKEN'}
+                      onChange={() => {
+                        setDefaultLoginMethod('WEBTOKEN');
+                        window.electron.store.set('login.defaultMethod', 'WEBTOKEN');
+                      }}
+                    />
+                    Set Webtoken as default
+                  </label>
+                </div>
+                <div className="flex overflow-hidden rounded-md border border-gray-300 shadow-xs focus-within:ring-2 focus-within:ring-kryo-ice-400 focus-within:ring-offset-0 dark:border-opacity-50 dark:focus-within:ring-offset-dark-level-one">
+                  <div className="relative flex min-h-[2.75rem] min-w-0 flex-1 items-stretch">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                      <ClipboardDocumentCheckIcon
                         className="h-5 w-5 text-gray-400"
                         aria-hidden="true"
                       />
@@ -465,7 +508,7 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
                       id="clientjs"
                       value={clientjstoken}
                       onChange={(e) => setClientjstoken(e.target.value)}
-                      className="bg-dark-level-one focus:border-green-500 block w-full rounded-none rounded-l-md pl-10 sm:text-sm border border-gray-300 border-opacity-50 focus:outline-none text-dark-white "
+                      className="block w-full border-0 bg-dark-level-one py-2.5 pl-10 pr-3 text-dark-white placeholder-gray-500 focus:outline-none focus:ring-0 sm:text-sm"
                       placeholder="Paste data"
                     />
                   </div>
@@ -476,9 +519,12 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
                       )
                     }
                     type="button"
-                    className="-ml-px relative inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 border-opacity-50 text-sm font-medium text-gray-700 bg-dark-level-two hover:bg-dark-level-three focus:outline-none focus:border-green-500  "
+                    className={classNames(
+                      btnDefault,
+                      'inline-flex shrink-0 items-center justify-center self-stretch rounded-none border-0 border-l border-gray-300 px-3 dark:border-opacity-50'
+                    )}
                   >
-                    <ClipboardCopyIcon
+                    <ClipboardDocumentIcon
                       className="h-5 w-5 text-gray-400"
                       aria-hidden="true"
                     />
@@ -488,9 +534,12 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
                       pathname: `https://steamcommunity.com/chat/clientjstoken`,
                     }}
                     target="_blank"
-                    className="-ml-px relative inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 border-opacity-50 text-sm font-medium rounded-r-md text-gray-700 bg-dark-level-two hover:bg-dark-level-three focus:outline-none focus:border-green-500  "
+                    className={classNames(
+                      btnDefault,
+                      'inline-flex shrink-0 items-center justify-center self-stretch rounded-none rounded-l-none border-0 border-l border-gray-300 px-3 dark:border-opacity-50'
+                    )}
                   >
-                    <ExternalLinkIcon
+                    <ArrowTopRightOnSquareIcon
                       className="h-5 w-5 text-gray-400"
                       aria-hidden="true"
                     />
@@ -499,7 +548,21 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
               </div>
             ) : (
               <>
-                <div className="flex justify-center bg-white py-4">
+                <div className="flex justify-center pb-3">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300 select-none">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 shrink-0 rounded border-white/20 bg-white/5"
+                      checked={defaultLoginMethod === 'QR'}
+                      onChange={() => {
+                        setDefaultLoginMethod('QR');
+                        window.electron.store.set('login.defaultMethod', 'QR');
+                      }}
+                    />
+                    Set QR as default
+                  </label>
+                </div>
+                <div className="flex justify-center bg-white dark:bg-dark-level-one py-4 rounded-md">
                   <QRCode size={235} value={qrURL} viewBox={`0 0 235 235`} />
                 </div>
                 <div className="flex pt-2 items-center">
@@ -508,13 +571,13 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
                     name="remember-me"
                     type="checkbox"
                     defaultChecked={storeRefreshToken}
-                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                    className="h-4 w-4 text-kryo-ice-400 focus:ring-kryo-ice-400 border-gray-300 rounded"
                     onChange={() => setStoreRefreshToken(!storeRefreshToken)}
                   />
                   <label
                     htmlFor="remember-me"
                     className="ml-2 block pl-1 text-sm text-gray-900 dark:text-dark-white"
-                  >
+                    >
                     Remember for later
                   </label>
                 </div>
@@ -524,17 +587,17 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
               <div
                 className={classNames(
                   loginMethod === 'REGULAR' ? '' : 'hidden',
-                  'flex items-center justify-between'
+                  'mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'
                 )}
               >
-                <div className="flex items-center">
+                <div className="flex items-center gap-2">
                   {isLock == '' ? (
                     <input
                       id="remember-me"
                       name="remember-me"
                       type="checkbox"
                       defaultChecked={storeRefreshToken}
-                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      className="h-4 w-4 shrink-0 rounded border-gray-300 text-kryo-ice-400 focus:ring-kryo-ice-400"
                       onChange={() => setStoreRefreshToken(!storeRefreshToken)}
                     />
                   ) : !hasChosenAccountLoginKey ? (
@@ -543,7 +606,7 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
                       name="remember-me"
                       type="checkbox"
                       checked={true}
-                      className=" pointer-events-none h-4 w-4 text-indigo-600 focus:ring-indigo-500 dark:text-opacity-50 border-gray-300 rounded"
+                      className="pointer-events-none h-4 w-4 shrink-0 rounded border-gray-300 text-kryo-ice-400 focus:ring-kryo-ice-400 dark:text-opacity-50"
                       onChange={() => setStoreRefreshToken(!storeRefreshToken)}
                     />
                   ) : (
@@ -553,14 +616,14 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
                   {isLock == '' ? (
                     <label
                       htmlFor="remember-me"
-                      className="ml-2 block text-sm text-gray-900 dark:text-dark-white"
+                      className="block cursor-pointer text-sm text-gray-900 dark:text-dark-white"
                     >
                       Remember for later
                     </label>
                   ) : !hasChosenAccountLoginKey ? (
                     <label
                       htmlFor="remember-me"
-                      className="ml-2 pointer-events-none block text-sm text-gray-900 dark:text-opacity-50 dark:text-dark-white"
+                      className="pointer-events-none block text-sm text-gray-900 dark:text-opacity-50 dark:text-dark-white"
                     >
                       Remember for later
                     </label>
@@ -569,20 +632,20 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
                   )}
                 </div>
                 {!hasChosenAccountLoginKey ? (
-                  <div className="flex items-center">
-                    <label
-                      htmlFor="sharedSecret"
-                      className="mr-2 block text-sm text-gray-900 dark:text-dark-white"
-                    >
-                      Show secret field
-                    </label>
+                  <div className="flex items-center gap-2 sm:justify-end">
                     <input
                       id="sharedSecret"
                       name="sharedSecret"
                       type="checkbox"
-                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      className="h-4 w-4 shrink-0 rounded border-gray-300 text-kryo-ice-400 focus:ring-kryo-ice-400"
                       onChange={() => setSecretEnabled(!secretEnabled)}
                     />
+                    <label
+                      htmlFor="sharedSecret"
+                      className="block cursor-pointer text-sm text-gray-900 dark:text-dark-white"
+                    >
+                      Show secret field
+                    </label>
                   </div>
                 ) : (
                   ''
@@ -592,18 +655,20 @@ export default function LoginForm({ isLock, replaceLock, runDeleteUser }) {
               ''
             )}
             {loginMethod !== 'QR' ? (
-              <div className="flex justify-between mt-6">
+              <div className="mt-6 w-full">
                 <button
-                  className="focus:bg-indigo-700 group relative w-full flex justify-center py-2 px-4 ml-3 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 "
-                  onClick={() => onSubmit()}
-                  type="button"
+                  className={classNames(
+                    btnPrimary,
+                    'group relative flex w-full justify-center px-4 py-2 pl-11'
+                  )}
+                  type="submit"
                 >
-                  <span className="absolute left-0 inset-y-0 flex items-center pl-3">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3">
                     {getLoadingButton ? (
                       <LoadingButton />
                     ) : (
                       <LockClosedIcon
-                        className="h-5 w-5 text-indigo-500 group-hover:text-indigo-400"
+                        className="h-5 w-5 text-white/90 group-hover:text-white"
                         aria-hidden="true"
                       />
                     )}

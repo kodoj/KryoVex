@@ -1,113 +1,135 @@
 import { Link } from 'react-router-dom';
-import { Disclosure } from '@headlessui/react';
+import { Disclosure, DisclosureButton } from '@headlessui/react';
 import {
-  ArchiveIcon,
-  FilterIcon,
-  SearchIcon,
-  SwitchHorizontalIcon,
-  UploadIcon,
-} from '@heroicons/react/solid';
-// import MoveModal from '../../shared/modals & notifcations/modalMove';
+  ArchiveBoxIcon,
+  FunnelIcon,
+  MagnifyingGlassIcon,
+  ArrowsRightLeftIcon,
+  ArrowUpTrayIcon,
+} from '@heroicons/react/24/solid';
+// import MoveModal from '../../shared/modals-notifcations/modalMove';
+import { useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { classNames } from '../../shared/filters/inventoryFunctions';
-import MoveModal from '../../shared/modals & notifcations/modalMove';
-import { moveModalQuerySet } from 'renderer/store/actions/modalMove actions';
+import { btnPrimary, btnText } from '../../shared/buttonStyles.ts';
+import { classNames } from '../../shared/filters/inventoryFunctions.ts';
+import MoveModal from '../../shared/modals-notifcations/modalMove.tsx';
+import { moveModalQuerySet } from '../../../../store/slices/modalMove.ts';
 import {
   moveToClearAll,
-  moveTosetSearchField,
-  moveToSetStorageAmount,
-} from 'renderer/store/actions/moveToActions';
-import PricingAmount from '../../shared/filters/pricingAmount';
-import InventoryFiltersDisclosure from '../../Inventory/filtersDisclosure';
-import { searchFilter } from 'renderer/functionsClasses/filters/search';
-import { ReducerManager } from 'renderer/functionsClasses/reducerManager';
-import { ConvertPrices } from 'renderer/functionsClasses/prices';
-import { toGetFilterManager } from './toFilterSetup';
-import { addMajorsFilters } from 'renderer/functionsClasses/filters/filters';
+  moveToSetSearch,
+  selectMoveTo,
+  setStorageAmount,
+} from 'renderer/store/slices/moveTo.ts';
+import PricingAmount from '../../shared/filters/pricingAmount.tsx';
+import InventoryFiltersDisclosure from '../../Inventory/filtersDisclosure.tsx';
+import { searchFilter } from 'renderer/functionsClasses/filters/search.ts';
+import { ConvertPrices } from 'renderer/functionsClasses/prices.ts';
+import { toGetFilterManager } from './toFilterSetup.tsx';
+import { addMajorsFilters } from '../../../../functionsClasses/filters/filters.ts';
+import { selectPricing } from 'renderer/store/slices/pricing.ts';
+import { selectInventory } from 'renderer/store/slices/inventory.ts';
+import { selectSettings } from 'renderer/store/slices/settings.ts';
+import { selectInventoryFilters } from 'renderer/store/slices/inventoryFilters.ts';
 const ClassFilters = toGetFilterManager()
 
 function content() {
   const dispatch = useDispatch();
-  let ReducerClass = new ReducerManager(useSelector);
-  const pricesResult = ReducerClass.getStorage(ReducerClass.names.pricing);
-  const toReducer = ReducerClass.getStorage(ReducerClass.names.moveTo);
-  const inventory = ReducerClass.getStorage(ReducerClass.names.inventory);
-  const settingsData = ReducerClass.getStorage(ReducerClass.names.settings);
-
-  const inventoryFilters = ReducerClass.getStorage(
-    ReducerClass.names.inventoryFilters
-  );
+  const pricesResult = useSelector(selectPricing);
+  const toReducer = useSelector(selectMoveTo);
+  const inventory = useSelector(selectInventory);
+  const settingsData = useSelector(selectSettings);
+  const inventoryFilters = useSelector(selectInventoryFilters);
 
   async function moveItems() {
-    let key = (Math.random() + 1).toString(36).substring(7);
-    key;
+    const key = (Math.random() + 1).toString(36).substring(7);
     let totalCount = 0;
-    let queryNew = [] as any;
-    for (const [, element] of Object.entries(toReducer.totalToMove)) {
-      let elemental = element as any;
-      for (const [, itemID] of Object.entries(elemental[2])) {
+    const queryNew = [] as any[];
+    const storageID = toReducer.activeStorages[0];
+    if (!storageID) {
+      return;
+    }
+    const rows = Array.isArray(toReducer.totalToMove) ? toReducer.totalToMove : [];
+    for (const elemental of rows) {
+      const row = elemental as unknown as [string, string, string[], string];
+      const ids = Array.isArray(row?.[2]) ? row[2] : [];
+      for (const itemID of ids) {
         queryNew.push({
           payload: {
-            name: elemental[3],
+            name: row[3] ?? '',
             number: toReducer.totalItemsToMove - totalCount,
             type: 'to',
-            storageID: toReducer.activeStorages[0],
-            itemID: itemID,
-            isLast: toReducer.totalItemsToMove - totalCount == 1,
-            key: key,
+            storageID,
+            itemID,
+            isLast: toReducer.totalItemsToMove - totalCount === 1,
+            key,
           },
         });
         totalCount++;
       }
     }
-    dispatch(moveModalQuerySet(queryNew));
+    if (queryNew.length === 0) {
+      return;
+    }
+    dispatch(moveModalQuerySet({ query: queryNew }));
   }
-  moveItems;
 
   // Storage count
-  let storageRow = [{ item_storage_total: 0 }];
-  if (toReducer.activeStorages.length != 0) {
-    storageRow = inventory.inventory.filter(function (item) {
-      if (item.item_id.includes(toReducer.activeStorages[0])) {
-        return item;
-      }
-    });
-  }
-  if (
-    storageRow[0]?.item_storage_total != toReducer?.activeStoragesAmount &&
-    storageRow[0]?.item_storage_total != null
-  ) {
-    dispatch(moveToSetStorageAmount(storageRow[0].item_storage_total));
-  }
-  let inventoryFilter = searchFilter(
-    inventory.inventory,
-    inventoryFilters,
-    toReducer
-  );
-  let totalAmount = 0 as any;
-  let totalHighlighted = 0 as any;
-  let classConvert = new ConvertPrices(settingsData, pricesResult);
-  inventoryFilter.forEach((projectRow) => {
-    // Get total highlighted
-    let filtered = toReducer.totalToMove.filter(
-      (row) => row[0] == projectRow.item_id
+  const activeStorageRow = useMemo(() => {
+    const sid = toReducer.activeStorages[0];
+    if (!sid) return null;
+    return (
+      inventory.inventory.find((item) => item.item_id?.includes(sid)) ?? null
     );
-    if (filtered.length > 0) {
-      totalHighlighted +=
-        classConvert.getPrice(projectRow) * filtered[0][2].length;
-    }
+  }, [inventory.inventory, toReducer.activeStorages]);
 
-    // Get total price
-    totalAmount += classConvert.getPrice(projectRow, true);
-  });
-  totalHighlighted = totalHighlighted.toFixed(0);
-  totalAmount = totalAmount.toFixed(0);
-  addMajorsFilters(inventory.combinedInventory).then((returnValue) => {
-    ClassFilters.loadFilter(returnValue, true)
-  })
+  useEffect(() => {
+    const total = activeStorageRow?.item_storage_total;
+    if (total == null) return;
+    if (total !== toReducer.activeStoragesAmount) {
+      dispatch(setStorageAmount({ storageAmount: total }));
+    }
+  }, [activeStorageRow?.item_storage_total, dispatch, toReducer.activeStoragesAmount]);
+
+  const inventoryFilter = useMemo(() => {
+    return searchFilter(inventory.inventory ?? [], inventoryFilters, toReducer);
+  }, [inventory.inventory, inventoryFilters, toReducer]);
+
+  const pricesConvert = useMemo(() => {
+    return new ConvertPrices(settingsData, pricesResult);
+  }, [settingsData, pricesResult]);
+
+  const totals = useMemo(() => {
+    let totalAmount = 0;
+    let totalHighlighted = 0;
+    for (const projectRow of inventoryFilter as any[]) {
+      const filtered = toReducer.totalToMove.filter((row) => row[0] == projectRow.item_id);
+      if (filtered.length > 0) {
+        const ids = filtered[0]?.[2];
+        totalHighlighted +=
+          pricesConvert.getPrice(projectRow) * (Array.isArray(ids) ? ids.length : 0);
+      }
+      totalAmount += pricesConvert.getPrice(projectRow, true);
+    }
+    return {
+      totalAmount: totalAmount.toFixed(0),
+      totalHighlighted: totalHighlighted.toFixed(0),
+    };
+  }, [inventoryFilter, pricesConvert, toReducer.totalToMove]);
+
+  useEffect(() => {
+    if (!inventory?.combinedInventory || inventory.combinedInventory.length === 0) return;
+    let cancelled = false;
+    addMajorsFilters(inventory.combinedInventory).then((returnValue) => {
+      if (cancelled) return;
+      ClassFilters.loadFilter(returnValue, true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [inventory?.combinedInventory]);
 
   return (
-    <div className="bg-white mt-8 dark:bg-dark-level-one">
+    <div className="mt-4 bg-white dark:bg-dark-level-one">
       {/* Filters */}
 
       <MoveModal />
@@ -115,42 +137,47 @@ function content() {
       <Disclosure
         as="section"
         aria-labelledby="filter-heading"
-        className="relative grid items-center border-b dark:bg-dark-level-one dark:border-opacity-50"
+        className="relative grid items-center border-b dark:border-opacity-50"
       >
-        <div className="relative col-start-1 row-start-1 py-4 flex justify-between">
-          <div className="max-w-7xl flex items-center space-x-6 divide-x divide-gray-200 text-sm px-4 sm:px-6 lg:px-8">
-            <div>
-              <Disclosure.Button className="group text-gray-700 font-medium flex items-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-500">
-                <FilterIcon
-                  className="flex-none w-5 h-5 mr-2 text-gray-400 group-hover:text-gray-500"
+        <div className="relative col-start-1 row-start-1 flex justify-between py-2.5">
+          <div className="flex max-w-7xl items-center divide-x divide-gray-200 text-sm dark:divide-gray-700/60 px-4 sm:px-6 lg:px-8">
+            <div className="pr-5">
+              <DisclosureButton
+                title="Show or hide inventory filters for transfer to storage"
+                className="group flex items-center font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-500"
+              >
+                <FunnelIcon
+                  className="mr-2 h-5 w-5 shrink-0 text-gray-400 group-hover:text-gray-500"
                   aria-hidden="true"
                 />
                 {inventoryFilters.inventoryFilter.length - 1 == -1
                   ? 0
                   : inventoryFilters.inventoryFilter.length - 1}{' '}
                 Filters
-              </Disclosure.Button>
+              </DisclosureButton>
             </div>
 
-            <div className="pl-6">
+            <div className="px-6">
               <button
                 type="button"
-                className="text-gray-500 dark:text-gray-400"
+                className={btnText}
+                title="Clear filters, search, and queued quantities for transfer to storage"
                 onClick={() => dispatch(moveToClearAll())}
               >
                 Clear all
               </button>
             </div>
 
+            <div className="min-w-0 flex-1 pl-6">
             <label htmlFor="search" className="sr-only">
               Search items
             </label>
-            <div className="relative rounded-md focus:outline-none focus:outline-none">
+            <div className="relative rounded-md focus:outline-none">
               <div
                 className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
                 aria-hidden="true"
               >
-                <SearchIcon
+                <MagnifyingGlassIcon
                   className="mr-3 h-4 w-4 text-gray-400"
                   aria-hidden="true"
                 />
@@ -160,27 +187,29 @@ function content() {
                 name="search"
                 id="search"
                 value={toReducer.searchInput}
-                className="block w-full pb-0.5  focus:outline-none dark:text-dark-white pl-9 sm:text-sm border-gray-300 h-7 dark:bg-dark-level-one dark:rounded-none dark:bg-dark-level-one dark:rounded-none"
+                className="block w-full pb-0.5  focus:outline-none dark:text-dark-white pl-9 sm:text-sm border-gray-300 h-7 dark:bg-dark-level-one dark:rounded-none dark:bg-dark-level-one"
                 placeholder="Search items"
                 spellCheck="false"
-                onChange={(e) => dispatch(moveTosetSearchField(e.target.value))}
+                onChange={(e) => dispatch(moveToSetSearch({searchField: e.target.value}))}
               />
             </div>
+            </div>
           </div>
-          <div className="flex justify-end justify-items-end max-w-7xl px-4 sm:px-6 lg:px-8 ">
-            <div className="flex items-center divide-x divide-gray-200">
-              <div>
+          <div className="flex max-w-7xl justify-end justify-items-end px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center divide-x divide-gray-200 dark:divide-gray-700/60">
+              <div className="pr-3">
                 <PricingAmount
                   totalAmount={new Intl.NumberFormat(settingsData.locale, {
                     style: 'currency',
                     currency: settingsData.currency,
-                  }).format(totalAmount)}
-                  pricingAmount={totalHighlighted}
+                  }).format(Number(totals.totalAmount))}
+                  pricingAmount={Number(totals.totalHighlighted)}
+                  title="Total value of listed inventory; number in parentheses is value of items queued to insert"
                 />
               </div>
               <div className="pl-3">
                 <span className="mr-3 flex items-center text-gray-500 text-xs font-medium uppercase tracking-wide">
-                  <ArchiveIcon
+                  <ArchiveBoxIcon
                     className="flex-none w-5 h-5 mr-2 text-gray-400 group-hover:text-gray-500"
                     aria-hidden="true"
                   />{' '}
@@ -206,7 +235,7 @@ function content() {
               </div>
               <div className="pl-3">
                 <span className="mr-3 flex items-center text-gray-500 text-xs font-medium uppercase tracking-wide">
-                  <SwitchHorizontalIcon
+                  <ArrowsRightLeftIcon
                     className="flex-none w-5 h-5 mr-2 text-gray-400 group-hover:text-gray-500"
                     aria-hidden="true"
                   />{' '}
@@ -219,20 +248,19 @@ function content() {
                 <Link
                   to=""
                   type="button"
+                  title="Insert queued items into the selected storage unit"
                   onClick={() => moveItems()}
                   className={classNames(
-                    toReducer.totalItemsToMove == 0 ||
-                      toReducer.activeStorages.length == 0 || 1000 -
-                      toReducer.activeStoragesAmount -
-                      toReducer.totalItemsToMove <
-                    0
-                      ? 'pointer-events-none border-gray-100 bg-dark-level-one'
-                      : 'shadow-sm border-gray-200 bg-dark-level-three',
-                    'order-1 ml-3 inline-flex items-center px-4 py-2 border dark:border-none dark:border-opacity-0 dark:text-dark-white text-sm font-medium rounded-md text-gray-700 hover:bg-dark-level-four  sm:order-0 sm:ml-0'
+                    btnPrimary,
+                    'order-1 ml-3 px-4 py-2 sm:order-0 sm:ml-0',
+                    (toReducer.totalItemsToMove === 0 ||
+                      toReducer.activeStorages.length === 0 ||
+                      1000 - toReducer.activeStoragesAmount - toReducer.totalItemsToMove < 0) &&
+                      'pointer-events-none opacity-50'
                   )}
                 >
                   Insert
-                  <UploadIcon
+                  <ArrowUpTrayIcon
                     className="ml-3 dark:text-dark-white h-4 w-4 text-gray-700"
                     aria-hidden="true"
                   />

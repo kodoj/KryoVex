@@ -1,14 +1,17 @@
-import { Bar } from 'react-chartjs-2';
-import { useSelector } from 'react-redux';
+import { Bar } from '@uconn-its/react-chartjs-2-react19-temp';
 import Chart from 'chart.js/auto';
-import { ReducerManager } from 'renderer/functionsClasses/reducerManager';
-import { ItemRow } from 'renderer/interfaces/items';
-import { searchFilter } from 'renderer/functionsClasses/filters/search';
-import { Prices, Settings } from 'renderer/interfaces/states';
+import { ItemRow } from 'renderer/interfaces/items.ts';
+import { searchFilter } from 'renderer/functionsClasses/filters/search.ts';
+import { Prices, Settings } from 'renderer/interfaces/states.tsx';
 import {
   ConvertPrices,
   ConvertPricesFormatted,
-} from 'renderer/functionsClasses/prices';
+} from 'renderer/functionsClasses/prices.ts';
+import { selectSettings } from '@/store/slices/settings.ts';
+import { useSelector } from 'react-redux';
+import { selectPricing } from '@/store/slices/pricing.ts';
+import { selectInventory } from '@/store/slices/inventory.ts';
+import { selectInventoryFilters } from '@/store/slices/inventoryFilters.ts';
 Chart;
 
 function runArray(
@@ -71,11 +74,12 @@ function getObject(
 
 export default function OverallVolume() {
   // Go through inventory and find matching categories
-  let Reducer = new ReducerManager(useSelector);
-  let settingsData: Settings = Reducer.getStorage(Reducer.names.settings);
-  let pricingData: Prices = Reducer.getStorage(Reducer.names.pricing);
-  let PricingConverter = new ConvertPrices(settingsData, pricingData);
-  const inventory = Reducer.getStorage(Reducer.names.inventory);
+
+  const settingsData: Settings = useSelector(selectSettings);
+  const pricingData: Prices = useSelector(selectPricing);
+  const inventory = useSelector(selectInventory);
+  const inventoryFilters = useSelector(selectInventoryFilters);
+  const PricingConverter = new ConvertPrices(settingsData, pricingData);
 
   // Convert inventory to chart data
 
@@ -85,13 +89,13 @@ export default function OverallVolume() {
 
   let inventoryFiltered = searchFilter(
     inventory.combinedInventory,
-    Reducer.getStorage(Reducer.names.inventoryFilters),
+    inventoryFilters,
     undefined
   );
 
   let storageFiltered = searchFilter(
     inventory.storageInventory,
-    Reducer.getStorage(Reducer.names.inventoryFilters),
+    inventoryFilters,
     undefined
   );
 
@@ -123,7 +127,15 @@ export default function OverallVolume() {
     return tooltipItems.dataset.label + ': ' + tooltipItems.raw;
   };
 
+  const topOverall = overallData.slice(0, 20);
+
   const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    layout: {
+      // Extra bottom room so every slanted x label fits (autoSkip off draws all 20).
+      padding: { left: 0, right: 4, top: 2, bottom: 16 },
+    },
     plugins: {
       tooltip: {
         callbacks: {
@@ -131,16 +143,22 @@ export default function OverallVolume() {
         },
       },
       legend: {
+        align: 'start' as const,
         labels: {
           color: '#d6d3cd',
+          boxWidth: 10,
+          padding: 6,
+          font: { size: 10 },
         },
-
         textDirection: 'ltr',
       },
       title: {
         display: true,
         text: 'Overall',
         color: '#d6d3cd',
+        align: 'start' as const,
+        padding: { top: 0, bottom: 4 },
+        font: { size: 13, weight: 600 },
       },
     },
     scales: {
@@ -148,15 +166,21 @@ export default function OverallVolume() {
         stacked: true,
         ticks: {
           color: '#d6d3cd',
-          maxRotation: 90,
-          minRotation: 90,
-          scaleStepWidth: 1,
+          maxRotation: 40,
+          minRotation: 40,
+          /** Chart.js was hiding every other label; show all bars’ labels */
+          autoSkip: false,
+          font: { size: 8 },
+          padding: 4,
         },
       },
       y: {
         stacked: true,
         ticks: {
           beginAtZero: true,
+          padding: 2,
+          font: { size: 10 },
+          color: '#9ca3af',
           callback: function (value) {
             if (value % 1 === 0) {
               return value;
@@ -168,29 +192,29 @@ export default function OverallVolume() {
   };
 
   const data = {
-    labels: overallData.slice(0, 20).map((itemRow) => itemRow[0]?.slice(0, 40)),
+    labels: topOverall.map((itemRow) => itemRow[0]?.slice(0, 40)),
 
     datasets: [
       {
         label: 'Inventory',
-        data: overallData.map((itemRow) => inventoryData[itemRow[0]]),
+        data: topOverall.map((itemRow) => inventoryData[itemRow[0]]),
         backgroundColor: 'rgba(255, 99, 132, 0.2)',
         borderColor: 'rgba(255, 99, 132, 1)',
         borderWidth: 1,
       },
       {
         label: 'Storage Units',
-        data: overallData.map((itemRow) => storageData[itemRow[0]]),
+        data: topOverall.map((itemRow) => storageData[itemRow[0]]),
         backgroundColor: 'rgb(50, 91, 136, 0.2)',
         borderColor: 'rgb(50, 91, 136, 1)',
         borderWidth: 1,
       },
     ],
   };
-  // @ts-ignore
   return (
-    <>
-      <Bar data={data} width="518" height="400" options={options} />
-    </>
+    <div className="relative h-full min-h-[min(300px,40vh)] w-full flex-1">
+      {/* @ts-ignore chart options */}
+      <Bar data={data} options={options} />
+    </div>
   );
 }

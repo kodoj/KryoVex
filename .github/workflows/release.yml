@@ -1,0 +1,44 @@
+# Build Windows NSIS installer + portable EXE and publish to GitHub Releases.
+# Prerequisites: push an annotated tag matching the app version (e.g. v1.0.0 while package.json is 1.0.0),
+# or run "Run workflow" manually after bumping version in package.json.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile app & production bundle
+        run: npm run package:compile
+
+      - name: Build installer & portable (publish to GitHub Release)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Unsigned Windows builds in CI (add CSC_LINK / CSC_KEY_PASSWORD secrets to enable signing)
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder build --win --publish always

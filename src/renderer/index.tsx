@@ -1,31 +1,26 @@
-import { render } from "react-dom";
+import { createRoot } from "react-dom/client";
 import { Provider } from "react-redux";
-import App from "./App";
+import App from "./App.tsx";
 import { PersistGate } from 'redux-persist/integration/react'
-import returnVar from './store/configureStore'
-
+import returnVar from './store/configureStore.ts'
+import './index.css';
 const myVar = returnVar()
 
+// Ensure dark mode is enabled globally (Tailwind darkMode: 'class').
+// This is intentionally done at runtime to avoid relying on HTML transforms/caching.
+document.documentElement.classList.add('dark');
 
-declare global {
-  interface Window {
-    electron: {
-      store: {
-        get: (key: string) => any;
-        set: (key: string, val: any) => void;
-        // any other methods you've defined...
-      },
-      ipcRenderer: any
-    }
-    
-  }
+const rootElement = document.getElementById("root");
+if (!rootElement) {
+  throw new Error('Root element not found');
 }
-
-render(
-
-  <Provider store={myVar.reduxStore}>
+const root = createRoot(rootElement);
+root.render(
+  <Provider store={myVar.store}>
     <PersistGate loading={null} persistor={myVar.persistor}>
-     <App />
-     </PersistGate>
+      <div className="flex h-full min-h-0 flex-col">
+        <App />
+      </div>
+    </PersistGate>
   </Provider>
-, document.getElementById("root"));
+);

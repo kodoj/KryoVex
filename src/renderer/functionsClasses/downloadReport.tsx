@@ -1,6 +1,6 @@
-import { ItemRow, ItemRowStorage } from "renderer/interfaces/items";
-import { Prices, Settings } from "renderer/interfaces/states";
-import { ConvertPricesFormatted } from "./prices";
+import { ItemRow, ItemRowStorage } from "renderer/interfaces/items.ts";
+import { Prices, Settings } from "renderer/interfaces/states.tsx";
+import { ConvertPricesFormatted } from "./prices.ts";
 
 async function handleDownload(storageData) {
     let csvContent =

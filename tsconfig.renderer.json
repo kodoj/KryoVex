@@ -1,0 +1,12 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "module": "esnext",
+        "moduleResolution": "bundler",
+        "noEmit": false,  // NEW: Allow Vite build output
+        "outDir": "dist/renderer",
+        "allowImportingTsExtensions": false  // NEW: Override to fix TS5096 in build
+    },
+    "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx", "src/shared/Interfaces-tsx"],
+    "exclude": ["src/main/**"]
+}

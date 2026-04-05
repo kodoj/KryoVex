@@ -1,11 +1,12 @@
-import { CheckIcon, TrashIcon } from '@heroicons/react/solid';
-import { useState } from 'react';
-import { classNames } from 'renderer/components/content/shared/filters/inventoryFunctions';
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
+import { CheckIcon, TrashIcon } from '@heroicons/react/24/solid';
+import { useEffect, useState } from 'react';
+import { btnIcon, btnMenuItem, btnMenuItemDanger } from 'renderer/components/content/shared/buttonStyles.ts';
+import { classNames } from 'renderer/components/content/shared/filters/inventoryFunctions.ts';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
 export default function UserGrid({ clickOnProfile, deleteUser,  runDeleteUser }) {
-  const [hasRun, setHasRun] = useState(false);
   const [getUsers, setUsers] = useState([] as any);
+  const [ctxMenu, setCtxMenu] = useState<null | { x: number; y: number; user: any }>(null);
 
   // The brain
   async function updateFunction() {
@@ -20,9 +21,8 @@ export default function UserGrid({ clickOnProfile, deleteUser,  runDeleteUser })
 
     // Get the order of the account details
     let valueToUse = [] as any;
-    await window.electron.store.get('accountKeyList').then((returnValue) => {
-      valueToUse = returnValue
-    });
+    const returnValue = await window.electron.store.get('accountKeyList');
+    valueToUse = returnValue || [];
 
     // Conditional logic
     if (valueToUse != undefined) {
@@ -59,20 +59,38 @@ export default function UserGrid({ clickOnProfile, deleteUser,  runDeleteUser })
 
   }
   // Run brain only once
-  if (hasRun == false) {
-    updateFunction();
-    setHasRun(true);
-  }
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await updateFunction();
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+      void cancelled;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Remove account
   async function removeUsername(username) {
     window.electron.ipcRenderer.deleteAccountDetails(username);
     updateFunction();
   }
-  if (deleteUser) {
-    updateFunction()
-    runDeleteUser()
-  }
+  useEffect(() => {
+    if (!deleteUser) return;
+    (async () => {
+      try {
+        await updateFunction();
+      } finally {
+        runDeleteUser();
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deleteUser]);
 
   // Drag n drop features
   async function handleOnDragEnd(result) {
@@ -94,7 +112,6 @@ export default function UserGrid({ clickOnProfile, deleteUser,  runDeleteUser })
 
     });
     await window.electron.store.set('accountKeyList', orderToStore)
-
   }
 
   return (
@@ -107,12 +124,12 @@ export default function UserGrid({ clickOnProfile, deleteUser,  runDeleteUser })
                 {getUsers.length == 0 ? (
                   <li
                     className={classNames(
-                      'relative rounded-lg border border-gray-300 border-dashed dark:bg-dark-level-four bg-white px-6 py-5 flex items-center space-x-3 focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"'
+                      'relative rounded-lg border border-gray-300 border-dashed dark:bg-dark-level-four bg-white px-6 py-5 flex items-center space-x-3 focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-kryo-ice-400'
                     )}
                   >
-                    <div className="flex-shrink-0">
+                    <div className="shrink-0">
                       <svg
-                        className="w-10 h-10 rounded-full flex-shrink-0 text-gray-300"
+                        className="w-10 h-10 rounded-full shrink-0 text-gray-300"
                         fill="currentColor"
                         viewBox="0 0 24 24"
                       >
@@ -134,18 +151,40 @@ export default function UserGrid({ clickOnProfile, deleteUser,  runDeleteUser })
                       key={person.username}
                       draggableId={person.username}
                       index={index}
+                      disableInteractiveElementBlocking
                     >
                       {(provided) => (
                       <li
                         ref={provided.innerRef}
                         {...provided.draggableProps}
-                        {...provided.dragHandleProps}
+                        onClick={() => clickOnProfile([person.username, person.refreshToken])}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setCtxMenu({ x: e.clientX, y: e.clientY, user: person });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            clickOnProfile([person.username, person.refreshToken]);
+                          }
+                        }}
+                        tabIndex={0}
                         className={classNames(
                           index == 0 ? '' : 'mt-5',
-                          'relative rounded-lg border dark:border-opacity-0 dark:border-none dark:bg-dark-level-four border-gray-300 bg-white px-6 py-5 shadow-sm flex items-center space-x-3 hover:border-gray-400 focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"'
+                          'relative rounded-lg border dark:border-opacity-0 dark:border-none dark:bg-dark-level-four border-gray-300 bg-white px-6 py-5 shadow-xs flex items-center space-x-3 hover:border-gray-400 focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-kryo-ice-400 cursor-pointer'
                         )}
                       >
-                        <div className="flex-shrink-0">
+                        <span
+                          {...provided.dragHandleProps}
+                          className="inline-flex h-8 w-4 items-center justify-center text-gray-400 dark:text-gray-500 cursor-grab active:cursor-grabbing select-none"
+                          aria-label="Drag to reorder"
+                          title="Drag to reorder"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onTouchStart={(e) => e.stopPropagation()}
+                        >
+                          ⋮⋮
+                        </span>
+                        <div className="shrink-0">
                           <img
                             className="h-10 w-10 rounded-full"
                             src={person.imageURL}
@@ -160,22 +199,34 @@ export default function UserGrid({ clickOnProfile, deleteUser,  runDeleteUser })
                             {person.username}
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => clickOnProfile([person.username, person.refreshToken])}
-                          className="inline-flex items-center dark:text-dark-white p-1 border border-transparent rounded-full hover:shadow-sm text-black hover:bg-gray-50 transition duration-500 ease-in-out hover:text-white hover:bg-green-600 transform hover:-translate-y-1 hover:scale-110"
-                        >
-                          <CheckIcon className="h-5 w-5" aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeUsername(person.username)}
-                          className={classNames(
-                            'inline-flex items-center p-1 border border-transparent rounded-full dark:text-dark-white hover:shadow-sm text-black hover:bg-gray-50 transition duration-500 ease-in-out hover:text-white hover:bg-red-600 transform hover:-translate-y-1 hover:scale-110'
-                          )}
-                        >
-                          <TrashIcon className="h-5 w-5" aria-hidden="true" />
-                        </button>
+                        {!person.refreshToken ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => clickOnProfile([person.username, person.refreshToken])}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onTouchStart={(e) => e.stopPropagation()}
+                              className={classNames(
+                                btnIcon,
+                                'rounded-full border-emerald-800/50 bg-emerald-950/30 p-1.5 text-emerald-100 hover:bg-emerald-900/50'
+                              )}
+                            >
+                              <CheckIcon className="h-5 w-5" aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeUsername(person.username)}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onTouchStart={(e) => e.stopPropagation()}
+                              className={classNames(
+                                btnIcon,
+                                'rounded-full border-red-900/50 bg-red-950/20 p-1.5 text-red-200 hover:bg-red-900/40'
+                              )}
+                            >
+                              <TrashIcon className="h-5 w-5" aria-hidden="true" />
+                            </button>
+                          </>
+                        ) : null}
                       </li>
                       )}
                     </Draggable>
@@ -186,6 +237,44 @@ export default function UserGrid({ clickOnProfile, deleteUser,  runDeleteUser })
             )}
           </Droppable>
         </DragDropContext>
+
+        {ctxMenu ? (
+          <div
+            className="fixed inset-0 z-50"
+            onMouseDown={() => setCtxMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setCtxMenu(null);
+            }}
+          >
+            <div
+              className="fixed min-w-[10rem] rounded-md border border-gray-700 bg-dark-level-three shadow-lg p-1 text-sm text-dark-white"
+              style={{ left: ctxMenu.x, top: ctxMenu.y }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                className={btnMenuItem}
+                onClick={() => {
+                  clickOnProfile([ctxMenu.user.username, ctxMenu.user.refreshToken]);
+                  setCtxMenu(null);
+                }}
+              >
+                Login
+              </button>
+              <button
+                type="button"
+                className={btnMenuItemDanger}
+                onClick={() => {
+                  removeUsername(ctxMenu.user.username);
+                  setCtxMenu(null);
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

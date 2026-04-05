@@ -1,40 +1,52 @@
 {
-  "name": "casemove",
-  "productName": "Casemove",
+  "name": "kryovex",
+  "productName": "KryoVex",
+  "version": "1.0.0",
   "description": "Counter-Strike 2 Storage unit manager that helps you move items in bulk without the clicking. ",
   "scripts": {
     "build": "concurrently \"npm run build:main\" \"npm run build:renderer\"",
-    "build:main": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.main.prod.ts",
-    "build:renderer": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.prod.ts",
-    "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir src",
+    "build:main": "cross-env NODE_ENV=production BUILD_TARGET=prod tsup",
+    "build:renderer": "cross-env NODE_ENV=production BUILD_TARGET=prod vite build",
+    "clean": "rimraf dist release node_modules/.cache .vite && mkdirp release/app && node -e \"const pkg = require('./package.json'); const trimmedPkg = { ...pkg, main: 'dist/main/main.mjs' }; delete trimmedPkg.devDependencies; delete trimmedPkg.scripts; delete trimmedPkg.build; delete trimmedPkg.jest; delete trimmedPkg.lintStaged; delete trimmedPkg.husky; delete trimmedPkg.prettier; delete trimmedPkg.browserslist; fs.writeFileSync('release/app/package.json', JSON.stringify(trimmedPkg, null, 2))\"",
+    "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir release/app",
     "lint": "cross-env NODE_ENV=development eslint . --cache --ext .js,.jsx,.ts,.tsx",
-    "prepare": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never",
-    "package": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish always",
-    "postinstall": "ts-node .erb/scripts/check-native-dep.js && electron-builder install-app-deps && cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.dev.dll.ts && opencollective-postinstall",
-    "start": "ts-node-dev ./.erb/scripts/check-port-in-use.js && npm run start:renderer",
-    "start:main": "cross-env NODE_ENV=development electron -r ts-node/register/transpile-only ./src/main/main.ts",
-    "start:renderer": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack serve --config ./.erb/configs/webpack.config.renderer.dev.ts",
+    "package:compile": "node --import tsx ./.erb/scripts/clean.js dist && npm run build && cd release/app && npm install --production && cd ../..",
+    "package:local": "npm run package:compile && electron-builder build --publish never",
+    "package": "npm run package:compile && electron-builder build --publish always",
+    "package:win": "npm run package:compile && electron-builder build --win --publish never",
+    "package:mac": "npm run package:compile && electron-builder build --mac --publish never",
+    "package:linux": "npm run package:compile && electron-builder build --linux --publish never",
+    "postinstall": "node .erb/scripts/check-native-dep.js",
+    "start": "node ./.erb/scripts/check-port-in-use.js && npm run dev",
+    "dev": "cross-env NODE_ENV=development BUILD_TARGET=dev node scripts/dev-fast.mjs",
+    "dev:watch": "cross-env NODE_ENV=development BUILD_TARGET=dev concurrently --names \"TSUP,VITE\" --prefix \"[{time} {name}]\" --timestamps --timestamp-format \"HH:mm:ss.SSS\" \"tsup --watch\" \"vite\"",
     "test": "jest",
     "electron-dev": "electron .",
-    "electron-trace": "electron --trace-warnings ."
+    "electron-trace": "electron --trace-warnings .",
+    "typecheck": "tsc --noEmit",
+    "icons": "node scripts/sync-app-icon.mjs",
+    "icon:sync": "node scripts/sync-app-icon.mjs",
+    "logo:alpha": "node scripts/transparent-logo-bg.mjs"
   },
+  "type": "module",
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
       "cross-env NODE_ENV=development eslint --cache"
     ],
     "*.json,.{eslintrc,prettierrc}": [
-      "prettier --ignore-path .eslintignore --parser json --write"
+      "prettier --ignore-path .prettierignore --parser json --write"
     ],
     "*.{css,scss}": [
-      "prettier --ignore-path .eslintignore --single-quote --write"
+      "prettier --ignore-path .prettierignore --single-quote --write"
     ],
     "*.{html,md,yml}": [
-      "prettier --ignore-path .eslintignore --single-quote --write"
+      "prettier --ignore-path .prettierignore --single-quote --write"
     ]
   },
   "build": {
-    "productName": "Casemove",
-    "appId": "com.nombers.casemove",
+    "productName": "KryoVex",
+    "icon": "icon.png",
+    "appId": "com.kryovex.app",
     "asar": true,
     "asarUnpack": "**\\*.{node,dll}",
     "files": [
@@ -44,13 +56,23 @@
     ],
     "afterSign": ".erb/scripts/notarize.js",
     "mac": {
-      "target": {
-        "target": "default",
-        "arch": [
-          "arm64",
-          "x64"
-        ]
-      },
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.utilities",
       "type": "distribution",
       "hardenedRuntime": true,
       "entitlements": "assets/entitlements.mac.plist",
@@ -73,14 +95,39 @@
     },
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
     },
     "linux": {
       "target": [
-        "deb"
+        "deb",
+        "AppImage"
       ],
-      "category": "Development"
+      "category": "Utility",
+      "synopsis": "CS2 storage unit and inventory management",
+      "maintainer": "Credskiz",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "directories": {
       "app": "release/app",
@@ -93,21 +140,26 @@
     "publish": {
       "provider": "github",
       "owner": "Credskiz",
-      "repo": "casemove"
+      "repo": "KryoVex"
     }
   },
   "author": {
-    "name": "Nombers/Credskiz"
+    "name": "Credskiz"
   },
   "jest": {
-    "testURL": "http://localhost/",
     "testEnvironment": "jsdom",
+    "testEnvironmentOptions": {
+      "url": "http://localhost/"
+    },
     "transform": {
       "\\.(ts|tsx|js|jsx)$": "ts-jest"
     },
     "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/src/renderer/$1",
+      "^renderer/(.*)$": "<rootDir>/src/renderer/$1",
+      "^shared/(.*)$": "<rootDir>/src/shared/$1",
       "\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$": "<rootDir>/.erb/mocks/fileMock.js",
-      "\\.(css|less|sass|scss)$": "identity-obj-proxy"
+      "\\.(css|less)$": "identity-obj-proxy"
     },
     "moduleFileExtensions": [
       "js",
@@ -120,152 +172,142 @@
       "node_modules",
       "release/app/node_modules"
     ],
+    "modulePathIgnorePatterns": [
+      "<rootDir>/release/app/"
+    ],
     "testPathIgnorePatterns": [
-      "release/app/dist"
+      "release/app/dist",
+      "<rootDir>/local_modules/"
     ],
     "setupFiles": [
-      "./.erb/scripts/check-build-exists.ts"
+      "<rootDir>/jest.setup.cjs"
     ]
   },
   "devDependencies": {
-    "@heroicons/react": "^1.0.5",
-    "@pmmmwh/react-refresh-webpack-plugin": "0.5.1",
+    "@electron/rebuild": "^3.6.0",
+    "@headlessui/react": "^2.2.7",
+    "@hello-pangea/dnd": "^18.0.1",
+    "@heroicons/react": "^2.2.0",
+    "@redux-beacon/google-analytics": "^1.2.3",
+    "@reduxjs/toolkit": "^2.8.2",
     "@svgr/core": "^6.2.0",
-    "@teamsupercell/typings-for-css-modules-loader": "^2.5.1",
-    "@testing-library/jest-dom": "^5.14.1",
-    "@testing-library/react": "^12.1.2",
+    "@tailwindcss/postcss": "^4.1.12",
+    "@testing-library/jest-dom": "^5.17.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/eslint-plugin-jsx-a11y": "^6.10.0",
+    "@types/globaloffensive": "^2.3.4",
     "@types/history": "4.7.9",
     "@types/jest": "^27.0.2",
-    "@types/lodash": "^4.14.184",
+    "@types/lodash": "^4.17.20",
     "@types/minimatch": "^6.0.0",
-    "@types/node": "^16.11.6",
-    "@types/react": "^17.0.33",
-    "@types/react-dom": "^17.0.10",
+    "@types/node": "^24.3.1",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
     "@types/react-router": "^5.1.17",
     "@types/react-router-dom": "^5.3.2",
-    "@types/react-test-renderer": "^17.0.1",
-    "@types/terser-webpack-plugin": "^5.0.4",
-    "@types/webpack-env": "^1.16.3",
-    "@typescript-eslint/eslint-plugin": "^5.62.0",
-    "@typescript-eslint/parser": "^5.62.0",
-    "autoprefixer": "^10.4.0",
-    "browserslist-config-erb": "^0.0.3",
+    "@types/react-test-renderer": "^18.3.0",
+    "@types/reselect": "^2.0.27",
+    "@types/source-map-support": "^0.5.10",
+    "@types/steam-user": "^5.1.0",
+    "@typescript-eslint/eslint-plugin": "^8.41.0",
+    "@typescript-eslint/parser": "^8.41.0",
+    "@uconn-its/react-chartjs-2-react19-temp": "^5.3.0",
+    "@vitejs/plugin-react": "^5.0.2",
+    "autoprefixer": "^10.4.21",
     "chalk": "^4.1.2",
-    "concurrently": "^6.3.0",
-    "core-js": "^3.19.0",
+    "chart.js": "^4.5.0",
+    "chartjs-plugin-datalabels": "^2.0.0",
+    "concurrently": "^9.0.1",
     "cross-env": "^7.0.3",
-    "css-loader": "^6.5.0",
-    "css-minimizer-webpack-plugin": "^3.1.1",
     "detect-port": "^1.3.0",
     "dotenv": "^16.0.0",
-    "electron": "^15.3.0",
-    "electron-builder": "^23.0.2",
-    "electron-devtools-installer": "^3.2.0",
+    "electron": "^37.4.0",
+    "electron-builder": "^26.0.20",
+    "electron-devtools-installer": "^4.0.0",
     "electron-notarize": "^1.1.1",
-    "electron-rebuild": "^3.2.3",
     "electron-winstaller": "^5.1.0",
-    "eslint": "^7.32.0",
-    "eslint-config-airbnb-base": "^14.2.1",
-    "eslint-config-erb": "^4.0.3",
-    "eslint-plugin-compat": "^3.13.0",
-    "eslint-plugin-import": "^2.25.2",
-    "eslint-plugin-jest": "^25.2.2",
-    "eslint-plugin-jsx-a11y": "^6.4.1",
-    "eslint-plugin-promise": "^5.1.1",
-    "eslint-plugin-react": "^7.26.1",
-    "eslint-plugin-react-hooks": "^4.2.0",
-    "file-loader": "^6.2.0",
+    "electronmon": "^2.0.3",
+    "eslint": "^9.34.0",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-jest": "^29.0.1",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-promise": "^7.2.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "events": "^3.3.0",
     "foreach": "file:local_modules/foreach",
-    "html-webpack-plugin": "^5.5.0",
+    "glob": "^11.0.0",
     "husky": "7.0.4",
     "identity-obj-proxy": "^3.0.0",
-    "jest": "^27.3.1",
+    "jest": "^30.1.1",
+    "jest-environment-jsdom": "^30.1.1",
     "lint-staged": "^11.2.6",
-    "mini-css-extract-plugin": "^2.4.3",
-    "opencollective-postinstall": "^2.0.3",
-    "postcss": "^8.3.11",
-    "postcss-loader": "^6.2.0",
+    "minimatch": "^10.0.3",
+    "postcss": "^8.5.6",
     "prettier": "^2.4.1",
-    "react-refresh": "^0.10.0",
-    "react-refresh-typescript": "^2.0.2",
-    "react-test-renderer": "^17.0.2",
-    "rimraf": "^3.0.2",
-    "sass": "^1.43.4",
-    "sass-loader": "^12.3.0",
-    "style-loader": "^3.3.1",
-    "tailwindcss": "^2.2.19",
-    "ts-jest": "^27.0.7",
-    "ts-loader": "^9.2.6",
-    "ts-node": "10.8.1",
-    "ts-node-dev": "^2.0.0",
-    "typescript": "^4.4.4",
-    "url-loader": "^4.1.1",
-    "webpack": "^5.60.0",
-    "webpack-bundle-analyzer": "^4.5.0",
-    "webpack-cli": "^4.9.1",
-    "webpack-dev-server": "^4.7.3",
-    "webpack-merge": "^5.8.0"
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-qr-code": "^2.0.11",
+    "react-redux": "^9.1.2",
+    "react-router-dom": "^7.8.2",
+    "redux-persist": "^6.0.0",
+    "redux-thunk": "^3.1.0",
+    "reselect": "^5.1.1",
+    "rimraf": "^6.0.1",
+    "rollup-plugin-visualizer": "^6.0.3",
+    "semver": "^7.7.2",
+    "sharp": "^0.33.5",
+    "tailwindcss": "^4.1.12",
+    "ts-jest": "^29.4.1",
+    "tsup": "^8.5.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.9.2",
+    "uuid": "^11.0.0",
+    "vite": "^7.1.4",
+    "vite-plugin-ejs": "^1.7.0",
+    "vite-plugin-html": "^3.2.2",
+    "vite-tsconfig-paths": "^5.1.4"
   },
   "overrides": {
     "cheerio": "1.0.0-rc.12",
     "@testing-library/jest-dom": {
       "cheerio": "1.0.0-rc.12"
     },
-    "@typescript-eslint/eslint-plugin": "^5.62.0",
-    "@typescript-eslint/parser": "^5.62.0",
-    "@typescript-eslint/scope-manager": "^5.62.0",
-    "@typescript-eslint/type-utils": "^5.62.0",
-    "@typescript-eslint/utils": "^5.62.0",
-    "@typescript-eslint/visitor-keys": "^5.62.0",
-    "@typescript-eslint/types": "^5.62.0",
-    "@typescript-eslint/tyEpescript-estree": "^5.62.0",
-    "ts-api-utils": "^0.0.3"
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
   },
   "dependencies": {
-    "@electron/remote": "^2.0.4",
-    "@headlessui/react": "^1.6.6",
+    "@electron/remote": "^2.1.0",
     "@node-steam/vdf": "^2.2.0",
-    "@redux-beacon/google-analytics": "^1.2.3",
-    "@reduxjs/toolkit": "^1.7.1",
-    "axios": "^0.24.0",
+    "@xmldom/xmldom": "^0.8.11",
+    "axios": "^1.11.0",
     "bytebuffer": "^5.0.1",
-    "chart.js": "^3.8.0",
-    "chartjs-plugin-datalabels": "^2.0.0",
-    "currency-converter-lt": "^1.2.4",
+    "core-js": "^3.45.1",
+    "currency-converter-lt": "^2.0.1",
     "electron-debug": "^3.2.0",
     "electron-dl": "^3.3.0",
     "electron-log": "^4.4.8",
     "electron-redux": "^1.5.4",
-    "electron-store": "^8.0.1",
-    "electron-updater": "^4.3.9",
-    "fernet": "^0.4.0",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.6.8",
     "find-process": "^1.4.11",
     "globaloffensive": "^3.2.0",
+    "got": "^14.4.7",
     "history": "4.x.x",
     "lodash": "^4.17.21",
-    "p-queue": "^6.6.2",
-    "react": "^17.0.2",
-    "react-beautiful-dnd": "^13.1.0",
-    "react-chartjs-2": "^4.2.0",
-    "react-dom": "^17.0.2",
-    "react-qr-code": "^2.0.11",
-    "react-redux": "^7.2.6",
-    "react-router-dom": "^5.3.0",
-    "redux-persist": "^6.0.0",
-    "redux-thunk": "^2.4.1",
+    "p-queue": "^8.1.0",
+    "ps-list": "^8.1.1",
     "regenerator-runtime": "^0.13.9",
     "steam-session": "^1.1.1",
     "steam-totp": "^2.1.1",
     "steam-user": "^5.2.3",
-    "update-electron-app": "^2.0.1",
-    "xmldom": "^0.6.0"
+    "update-electron-app": "^2.0.1"
   },
-  "devEngines": {
-    "node": ">=14.x",
-    "npm": ">=7.x"
-  },
-  "collective": {
-    "url": "https://opencollective.com/electron-react-boilerplate-594"
+  "engines": {
+    "node": ">=20.x",
+    "npm": ">=10.x"
   },
   "browserslist": [],
   "prettier": {

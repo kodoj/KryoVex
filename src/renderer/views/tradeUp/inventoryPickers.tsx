@@ -1,85 +1,224 @@
-import { BeakerIcon, PencilIcon, TagIcon } from '@heroicons/react/solid';
-import { useState } from 'react';
+import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
+import { BeakerIcon, PencilIcon, TagIcon } from '@heroicons/react/24/solid';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
-import { RowHeader, RowHeaderHiddenXL } from 'renderer/components/content/Inventory/inventoryRows/headerRows';
+import {
+  RowHeader,
+  RowHeaderCondition,
+  RowHeaderPlainKey,
+  RowHeaderCustomKey,
+  autoFitAllColumns,
+  applyPersistedWidthsToTable,
+  requestWindowFitForTable,
+  setTableWidthToColSum,
+} from 'renderer/components/content/Inventory/inventoryRows/headerRows.tsx';
+import {
+  overviewTableScrollWrap,
+  overviewTableClassName,
+  overviewTheadClassName,
+  overviewTheadTrClassName,
+  overviewThCellOverride,
+  overviewTbodyClassName,
+  overviewTrClassName,
+} from 'renderer/components/content/shared/tableOverviewStyles.ts';
+import { btnDefault, btnIcon } from 'renderer/components/content/shared/buttonStyles.ts';
 import {
   classNames,
-  sortDataFunctionTwo,
-} from 'renderer/components/content/shared/filters/inventoryFunctions';
-import itemRarities from 'renderer/components/content/shared/rarities';
-import { ConvertPricesFormatted } from 'renderer/functionsClasses/prices';
-import { ReducerManager } from 'renderer/functionsClasses/reducerManager';
-import { State } from 'renderer/interfaces/states';
-import { setRenameModal } from 'renderer/store/actions/modalMove actions';
-import { tradeUpAddRemove } from 'renderer/store/actions/tradeUpActions';
-import { createCSGOImage } from '../../functionsClasses/createCSGOImage';
+  sortDataFunction,
+} from 'renderer/components/content/shared/filters/inventoryFunctions.ts';
+import itemRarities from 'renderer/components/content/shared/rarities.tsx';
+import { ConvertPricesFormatted } from 'renderer/functionsClasses/prices.ts';
+import { setRenameModal } from 'renderer/store/slices/modalRename.ts';
+import { selectTradeUp, tradeUpAddRemove } from 'renderer/store/slices/tradeUp.ts';
+import { IMAGE_FALLBACK_DATA_URI } from '../../functionsClasses/createCSGOImage.ts';
+import { markImageError, useCs2Image } from 'renderer/hooks/useCs2Image.ts';
+import { selectInventory } from 'renderer/store/slices/inventory.ts';
+import { selectInventoryFilters } from 'renderer/store/slices/inventoryFilters.ts';
+import { selectPricing } from 'renderer/store/slices/pricing.ts';
+import { selectSettings } from 'renderer/store/slices/settings.ts';
+import { ItemRow, ItemRowStorage } from 'renderer/interfaces/items.ts';
+
+function steamMarketListingUrlForRow(row: ItemRow): string {
+  const hash =
+    row.item_paint_wear == null
+      ? row.item_name
+      : `${row.item_name} (${row.item_wear_name})`;
+  const fixed = String(hash).replaceAll('(Holo/Foil)', '(Holo-Foil)');
+  return `https://steamcommunity.com/market/listings/730/${encodeURIComponent(fixed)}`;
+}
+
+function steamStickerMarketUrl(sticker: { sticker_type: string; sticker_name: string }) {
+  const hash = `${sticker.sticker_type} | ${sticker.sticker_name}`.replaceAll(
+    '(Holo/Foil)',
+    '(Holo-Foil)'
+  );
+  return `https://steamcommunity.com/market/listings/730/${encodeURIComponent(hash)}`;
+}
+
+function TradeUpItemImg({
+  srcKey,
+  className,
+  title,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  srcKey: string;
+  className: string;
+  title?: string;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+}) {
+  const src = useCs2Image(srcKey, { fallback: IMAGE_FALLBACK_DATA_URI });
+  return (
+    <img
+      className={className}
+      title={title}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      src={src}
+      onError={(e) => {
+        markImageError(srcKey);
+        const img = e.currentTarget;
+        img.onerror = null;
+        img.src = IMAGE_FALLBACK_DATA_URI;
+      }}
+    />
+  );
+}
+
+function TradeUpStickerImg({
+  srcKey,
+  className,
+  alt,
+  title,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  srcKey: string;
+  className: string;
+  alt?: string;
+  title?: string;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+}) {
+  const src = useCs2Image(srcKey, { fallback: IMAGE_FALLBACK_DATA_URI });
+  return (
+    <img
+      className={className}
+      alt={alt ?? ''}
+      title={title}
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      src={src}
+      onError={(e) => {
+        markImageError(srcKey);
+        const img = e.currentTarget;
+        img.onerror = null;
+        img.src = IMAGE_FALLBACK_DATA_URI;
+      }}
+    />
+  );
+}
 
 function content() {
   const [stickerHover, setStickerHover] = useState('');
   const [itemHover, setItemHover] = useState('');
-  const currentState: State = new ReducerManager(useSelector).getStorage();
+  const [sortedRows, setSortedRows] = useState<ItemRow[]>([]);
 
-  const inventory = currentState.inventoryReducer;
-  const inventoryFilters = currentState.inventoryFiltersReducer;
-  const pricesResult = currentState.pricingReducer;
-  const settingsData = currentState.settingsReducer;
-  const tradeUpData = currentState.tradeUpReducer;
+  const inventory = useSelector(selectInventory);
+  const inventoryFilters = useSelector(selectInventoryFilters);
+  const pricesResult = useSelector(selectPricing);
+  const settingsData = useSelector(selectSettings);
+  const tradeUpData = useSelector(selectTradeUp);
 
   const dispatch = useDispatch();
 
-  // Sort function
-
-  // Convert to dict for easier match
-  let finalList = {};
-  let inventoryToUse = [
-    ...inventory.inventory,
-    ...inventory.storageInventoryRaw,
-  ];
-  inventoryToUse.forEach((element) => {
-    if (finalList[element.item_name] == undefined) {
-      finalList[element.item_name] = [element];
-    } else {
-      let listToUse = finalList[element.item_name];
-      listToUse.push(element);
-      finalList[element.item_name] = listToUse;
-    }
+  const tableId = 'tradeUp';
+  /** Fixed px — icon-only; avoids table-fixed eating slack from old persisted `Steam` widths. */
+  const STEAM_LINK_COL_PX = 40;
+  const colWidths = (settingsData as any)?.columnWidths?.[tableId] ?? {};
+  const didAutoFitRef = useRef(false);
+  const colStyle = (key: string) => {
+    const width = colWidths?.[key];
+    return width != null ? ({ width: `${width}px` } as any) : ({} as any);
+  };
+  const colStyleSteamLink = (): React.CSSProperties => ({
+    width: `${STEAM_LINK_COL_PX}px`,
+    minWidth: `${STEAM_LINK_COL_PX}px`,
+    maxWidth: `${STEAM_LINK_COL_PX}px`,
   });
 
-  // Inventory to use
-  let finalInventoryToUse = [] as any;
-  let seenNames = [] as any;
-  let inventoryFilter = [
-    ...inventoryFilters.inventoryFiltered,
-    ...inventory.storageInventory,
-  ];
-  inventoryFilter.forEach((projectRow) => {
-    if (
-      finalList[projectRow.item_name] != undefined &&
-      seenNames.includes(projectRow.item_name) == false
-    ) {
-      finalInventoryToUse = [
-        ...finalInventoryToUse,
-        ...finalList[projectRow.item_name],
-      ];
-      seenNames.push(projectRow.item_name);
-    }
-  });
+  const rarityColorByName = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const r of itemRarities) out[r.value] = r.bgColorClass;
+    return out;
+  }, []);
 
-  finalInventoryToUse = sortDataFunctionTwo(
+  const getRarityColor = (row: ItemRow) => rarityColorByName[row.rarityName] ?? '';
+
+  const baseRowsToSort = useMemo(() => {
+    // Group inventory+storageRaw by item_name, then expand rows based on the filtered list.
+    const grouped: Record<string, ItemRow[]> = {};
+    const inventoryToUse = [...inventory.inventory, ...inventory.storageInventoryRaw] as ItemRow[];
+    for (const element of inventoryToUse) {
+      (grouped[element.item_name] ||= []).push(element);
+    }
+
+    const out: ItemRow[] = [];
+    const seen = new Set<string>();
+    const inventoryFilter = [...inventoryFilters.inventoryFiltered, ...inventory.storageInventory] as ItemRow[];
+    for (const row of inventoryFilter) {
+      if (seen.has(row.item_name)) continue;
+      const group = grouped[row.item_name];
+      if (group) out.push(...group);
+      seen.add(row.item_name);
+    }
+    return out;
+  }, [
+    inventory.inventory,
+    inventory.storageInventoryRaw,
+    inventory.storageInventory,
+    inventoryFilters.inventoryFiltered,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const sorted = (await sortDataFunction(
+        inventoryFilters.sortValue,
+        baseRowsToSort,
+        pricesResult.prices,
+        settingsData?.source?.title
+      )) as ItemRow[];
+      if (!cancelled) setSortedRows(sorted);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    baseRowsToSort,
     inventoryFilters.sortValue,
-    finalInventoryToUse,
     pricesResult.prices,
-    settingsData?.source?.title
-  );
+    settingsData?.source?.title,
+  ]);
+
+  let finalInventoryToUse = [...sortedRows];
 
   finalInventoryToUse = finalInventoryToUse.filter(function (item) {
     if (!item.tradeUpConfirmed) {
       return false;
     }
     if (
-      tradeUpData.MinFloat > item.item_paint_wear ||
-      tradeUpData.MaxFloat < item.item_paint_wear
+      tradeUpData.MinFloat > (item.item_paint_wear ?? 0) ||
+      tradeUpData.MaxFloat < (item.item_paint_wear ?? 0)
     ) {
       return false;
     }
@@ -114,45 +253,104 @@ function content() {
     return false;
   });
 
-  let itemR = {};
-  itemRarities.forEach((element) => {
-    itemR[element.value] = element.bgColorClass;
-  });
-  finalInventoryToUse.forEach((element) => {
-    element['rarityColor'] = itemR[element.rarityName];
-  });
-
   const isFull = tradeUpData.tradeUpProducts.length == 10;
   if (inventoryFilters.sortBack) {
     finalInventoryToUse.reverse();
   }
 
+  useLayoutEffect(() => {
+    if (didAutoFitRef.current) return;
+    if (colWidths && Object.keys(colWidths).length > 0) return;
+    if (!finalInventoryToUse || finalInventoryToUse.length === 0) return;
+    const table = document.querySelector(`table[data-tableid="${tableId}"]`) as HTMLTableElement | null;
+    if (!table) return;
+    didAutoFitRef.current = true;
+    autoFitAllColumns(table, dispatch);
+    requestAnimationFrame(() => {
+      autoFitAllColumns(table, dispatch);
+      requestWindowFitForTable(table);
+    });
+  }, [finalInventoryToUse.length, dispatch, tableId, colWidths]);
+
+  useLayoutEffect(() => {
+    if (!colWidths || Object.keys(colWidths).length === 0) return;
+    const table = document.querySelector(`table[data-tableid="${tableId}"]`) as HTMLTableElement | null;
+    if (!table) return;
+    applyPersistedWidthsToTable(table, colWidths as Record<string, number>);
+    const steamLink = table.querySelector('col[data-colkey="SteamLink"]') as HTMLTableColElement | null;
+    if (steamLink) {
+      steamLink.style.width = `${STEAM_LINK_COL_PX}px`;
+      steamLink.style.minWidth = `${STEAM_LINK_COL_PX}px`;
+      steamLink.style.maxWidth = `${STEAM_LINK_COL_PX}px`;
+    }
+    setTableWidthToColSum(table);
+    requestWindowFitForTable(table);
+  }, [tableId, colWidths, STEAM_LINK_COL_PX]);
+
   return (
     <>
-      <table className="min-w-full">
-        <thead>
-          <tr
-            className={classNames(
-              settingsData.os == 'win32' ? 'top-0' : 'top-0',
-              'border-gray-200 sticky'
-            )}
-          >
+      <div className="bg-dark-level-one px-2 py-3 sm:px-3">
+        <div data-table-scroll className={overviewTableScrollWrap}>
+        <table
+          data-tableid={tableId}
+          data-table-width="fill"
+          className={classNames(overviewTableClassName, overviewThCellOverride)}
+        >
+        <colgroup>
+          <col data-colkey="Product name" style={colStyle('Product name')} />
+          <col data-colkey="Collection" style={colStyle('Collection')} />
+          <col data-colkey="Price" style={colStyle('Price')} />
+          <col data-colkey="Stickers" style={colStyle('Stickers')} />
+          <col data-colkey="wearValue" style={colStyle('wearValue')} />
+          <col data-colkey="SteamLink" style={colStyleSteamLink()} />
+          <col data-colkey="Move" style={colStyle('Move')} />
+        </colgroup>
+        <thead className={overviewTheadClassName}>
+          <tr className={classNames(overviewTheadTrClassName, 'border-gray-200')}>
             <RowHeader headerName="Product" sortName="Product name" />
-            <RowHeader headerName="Collection" sortName="Collection" />
-            <RowHeader headerName="Price" sortName="Price" />
-
-
-            <RowHeaderHiddenXL headerName="Stickers/Patches" sortName="Stickers" />
-            <RowHeader headerName="Float" sortName="wearValue" />
-            <th className="hidden lg:table-cell px-6 py-2 border-b bg-gray-50 border-gray-200 dark:border-opacity-50 dark:bg-dark-level-two">
-              <span className="text-gray-500 dark:text-gray-400 tracking-wider uppercase text-center text-xs font-medium text-gray-500 dark:text-gray-400">
-                Move
-              </span>
-            </th>
+            <RowHeaderCondition
+              headerName="Collection"
+              sortName="Collection"
+              condition="Collections"
+              visibilityClass="table-cell"
+              forceVisible
+            />
+            <RowHeaderCondition
+              headerName="Price"
+              sortName="Price"
+              condition="Price"
+              visibilityClass="table-cell"
+              forceVisible
+            />
+            <RowHeaderCondition
+              headerName="Stickers/Patches"
+              sortName="Stickers"
+              condition="Stickers/patches"
+              visibilityClass="table-cell"
+              forceVisible
+            />
+            <RowHeaderCondition
+              headerName="Float"
+              sortName="wearValue"
+              condition="Float"
+              visibilityClass="table-cell"
+              thClassName="border-r border-gray-600/55 dark:border-gray-600/50"
+              forceVisible
+            />
+            <RowHeaderCustomKey colKey="SteamLink" className="table-cell !px-1 border-r border-gray-600/55 dark:border-gray-600/50">
+              <div className="flex w-full items-center justify-center py-0.5">
+                <span className="sr-only">Steam Market</span>
+                <ArrowTopRightOnSquareIcon className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+              </div>
+            </RowHeaderCustomKey>
+            <RowHeaderPlainKey colKey="Move" label="Move" visibilityClass="table-cell" />
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-100 dark:bg-dark-level-one dark:divide-gray-500">
-          {finalInventoryToUse.map((projectRow) => (
+        <tbody className={overviewTbodyClassName}>
+          {finalInventoryToUse.map((projectRow: ItemRow) => (
+            (() => {
+              const rarityColor = getRarityColor(projectRow);
+              return (
             <tr
               key={projectRow.item_id}
               className={classNames(
@@ -170,69 +368,65 @@ function content() {
                   : 'hidden',
                 inventoryFilters.rarityFilter.length != 0
                   ? inventoryFilters.rarityFilter?.includes(
-                      projectRow.rarityColor
+                      rarityColor
                     )
                     ? ''
                     : 'hidden'
                   : '',
-                'hover:shadow-inner'
+                overviewTrClassName
               )}
-            >
-              <td className="px-6 py-3 max-w-0 w-full whitespace-nowrap overflow-hidden text-sm font-normal text-gray-900">
-                <div className="flex items-center space-x-3 lg:pl-2">
+              >
+              <td className="max-w-0 w-full whitespace-nowrap text-sm font-normal text-gray-900 dark:text-zinc-100">
+                <div className="flex items-center gap-2 lg:pl-1">
                   <div
                     className={classNames(
-                      projectRow.rarityColor,
-                      'flex-shrink-0 w-2.5 h-2.5 rounded-full'
+                      rarityColor,
+                      'shrink-0 w-2.5 h-2.5 rounded-full'
                     )}
                     aria-hidden="true"
                   />
-                  <div className="flex flex-shrink-0 -space-x-1">
+                  <div className="flex shrink-0">
                     {projectRow.item_moveable != true ? (
-                      <div className="flex flex-shrink-0 -space-x-1">
-                        <img
-                          className="max-w-none h-11 w-11 dark:from-gray-300 dark:to-gray-400 rounded-full ring-2 ring-transparent object-cover bg-gradient-to-t from-gray-100 to-gray-300"
-                          src={
-                            createCSGOImage(projectRow.item_url)
-                          }
+                      <div
+                        className={classNames(
+                          'relative h-11 w-11 shrink-0 overflow-hidden rounded-md',
+                          'bg-dark-level-two/90 ring-1 ring-gray-700/40'
+                        )}
+                      >
+                        <TradeUpItemImg
+                          className="h-full w-full origin-center scale-[1.22] object-contain object-center transition duration-300 ease-out"
+                          srcKey={projectRow.item_url}
+                          title={projectRow.item_name}
                         />
                       </div>
                     ) : (
                       <Link
-                        to={{
-                          pathname: `https://steamcommunity.com/market/listings/730/${
-                            projectRow.item_paint_wear == undefined
-                              ? projectRow.item_name
-                              : projectRow.item_name +
-                                ' (' +
-                                projectRow.item_wear_name +
-                                ')'
-                          }`,
-                        }}
+                        to={{ pathname: steamMarketListingUrlForRow(projectRow) }}
                         target="_blank"
+                        rel="noopener noreferrer"
+                        title="View on Steam Community Market"
+                        className="shrink-0"
                       >
-                        <div className="flex flex-shrink-0 -space-x-1">
-                          <img
-                            onMouseEnter={() =>
-                              setItemHover(projectRow.item_id)
-                            }
+                        <div
+                          className={classNames(
+                            'relative h-11 w-11 shrink-0 overflow-hidden rounded-md bg-dark-level-two/90 transition duration-300',
+                            itemHover === projectRow.item_id
+                              ? 'ring-2 ring-amber-400/70'
+                              : 'ring-1 ring-gray-700/40'
+                          )}
+                        >
+                          <TradeUpItemImg
+                            onMouseEnter={() => setItemHover(projectRow.item_id)}
                             onMouseLeave={() => setItemHover('')}
-                            className={classNames(
-                              itemHover == projectRow.item_id
-                                ? 'transform-gpu hover:-translate-y-1 hover:scale-110'
-                                : '',
-                              'max-w-none h-11 w-11 transition duration-500 ease-in-out  dark:from-gray-300 dark:to-gray-400 rounded-full ring-2 ring-transparent object-cover bg-gradient-to-t from-gray-100 to-gray-300'
-                            )}
-                            src={
-                              createCSGOImage(projectRow.item_url)
-                            }
+                            className="h-full w-full origin-center scale-[1.22] object-contain object-center transition duration-300 ease-out"
+                            srcKey={projectRow.item_url}
                           />
                         </div>
                       </Link>
                     )}
                   </div>
                   <span>
-                    <span className="flex dark:text-dark-white">
+                    <span className="flex dark:text-zinc-100">
                       {projectRow.item_name !== '' ? (
                         projectRow.item_customname !== null ? (
                           projectRow.item_customname
@@ -244,19 +438,21 @@ function content() {
                           <a
                             href="https://forms.gle/6qZ8N2ES8CdeavcVA"
                             target="_blank"
-                            className="font-medium text-indigo-600 hover:text-indigo-500"
-                          >
+                            rel="noreferrer"
+                            className="font-medium text-kryo-ice-400 hover:text-kryo-ice-300"
+                            >
                             An error occurred. Please report this here.
                           </a>
                           <br />
                           <button
-                            className="px-2.5 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                            type="button"
+                            className={classNames(btnDefault, 'px-2.5 py-1.5 text-xs')}
                             onClick={() =>
                               navigator.clipboard.writeText(
                                 JSON.stringify(projectRow)
                               )
                             }
-                          >
+                            >
                             {' '}
                             COPY REF
                           </button>
@@ -289,18 +485,20 @@ function content() {
                       {projectRow.item_url.includes('casket') ? (
                         <Link
                           to=""
-                          className="text-gray-500"
+                          className="text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200"
                           onClick={() =>
                             dispatch(
                               setRenameModal(
-                                projectRow.item_id,
-                                projectRow.item_customname !== null
+                                {
+                                  itemID: projectRow.item_id,
+                                  itemName: projectRow.item_customname !== null
                                   ? projectRow.item_customname
                                   : projectRow.item_name
+                                }
                               )
                             )
                           }
-                        >
+                          >
                           <PencilIcon className="h-4 w-5 pb-1" />
                         </Link>
                       ) : (
@@ -308,8 +506,8 @@ function content() {
                       )}
                     </span>
                     <span
-                      className="text-gray-500 "
-                      title={projectRow.item_paint_wear}
+                      className="text-gray-500 dark:text-gray-400"
+                      title={projectRow.item_paint_wear?.toString()}
                     >
                       {projectRow.item_customname !== null
                         ? projectRow.item_storage_total !== undefined
@@ -340,10 +538,10 @@ function content() {
                   </span>
                 </div>
               </td>
-              <td className="hidden xl:table-cell px-6 py-3 max-w-0 w-full whitespace-nowrap overflow-hidden text-sm font-normal text-gray-900">
-                <div className="flex items-center">
+              <td className="table-cell max-w-0 w-full whitespace-nowrap text-center text-sm font-normal text-gray-900 dark:text-zinc-100">
+                <div className="flex items-center justify-center">
                   <span>
-                    <span className="flex dark:text-dark-white">
+                    <span className="flex dark:text-zinc-100">
                       {projectRow.collection
                         .replace('The ', '')
                         .replace(' Collection', '')}
@@ -352,83 +550,101 @@ function content() {
                 </div>
               </td>
 
-              <td className="hidden xl:table-cell px-6 py-3 text-sm text-gray-500 font-medium">
-                <div className="flex items-center space-x-2 justify-center rounded-full drop-shadow-lg">
-                  <div className="flex flex-shrink-0 -space-x-1 text-gray-500 dark:text-gray-400 font-normal">
-                    {pricesResult.prices[
-                      projectRow.item_name + projectRow.item_wear_name || ''
-                    ] == undefined
-                      ? ''
-                      : new ConvertPricesFormatted(
-                          settingsData,
-                          pricesResult
-                        ).getFormattedPrice(projectRow)}
+              <td className="table-cell text-sm font-medium text-gray-500 dark:text-zinc-200">
+                <div className="flex items-center justify-center gap-1">
+                  <div className="flex shrink-0 -space-x-1 text-gray-500 dark:text-zinc-200 font-normal">
+                    {(() => {
+                      const prices = new ConvertPricesFormatted(settingsData, pricesResult);
+                      const price = prices.getPrice(projectRow);
+                      return Number.isFinite(price) && price > 0
+                        ? prices.getFormattedPrice(projectRow)
+                        : '';
+                    })()}
                   </div>
                 </div>
               </td>
 
-              <td className="hidden 2xl:table-cell px-6 py-3 text-sm text-gray-500 dark:text-gray-400 font-medium">
-                <div className="flex items-center space-x-2 justify-center rounded-full drop-shadow-lg">
-                  <div className="flex flex-shrink-0 -space-x-1">
+              <td className="table-cell text-sm font-medium text-gray-500 dark:text-gray-400">
+                <div className="flex items-center justify-center gap-1">
+                  <div className="flex shrink-0 -space-x-1">
                     {projectRow.stickers?.map((sticker, index) => (
                       <Link
-                        to={{
-                          pathname: `https://steamcommunity.com/market/listings/730/${sticker.sticker_type} | ${sticker.sticker_name}`,
-                        }}
+                        key={`${projectRow.item_id}-${index}-${sticker?.sticker_url ?? ''}`}
+                        to={{ pathname: steamStickerMarketUrl(sticker) }}
                         target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0"
                       >
-                        <img
-                          key={index}
-                          onMouseEnter={() =>
-                            setStickerHover(index + projectRow.item_id)
-                          }
-                          onMouseLeave={() => setStickerHover('')}
+                        <div
                           className={classNames(
-                            stickerHover == index + projectRow.item_id
-                              ? 'transform-gpu hover:-translate-y-1 hover:scale-110'
-                              : '',
-                            'max-w-none h-8 w-8 rounded-full hover:shadow-sm text-black hover:bg-gray-50 transition duration-500 ease-in-out hover:text-white hover:bg-green-600 ring-2 object-cover ring-transparent bg-gradient-to-t from-gray-100 to-gray-300 dark:from-gray-300 dark:to-gray-400'
+                            'relative h-8 w-8 overflow-hidden rounded-md',
+                            'bg-dark-level-two/90 ring-1 ring-gray-700/40',
+                            stickerHover === index + projectRow.item_id
+                              ? 'transform-gpu -translate-y-0.5 scale-105'
+                              : ''
                           )}
-                          src={
-                            createCSGOImage(sticker.sticker_url)
-                          }
-                          alt={sticker.sticker_name}
-                          title={sticker.sticker_name}
-                        />
+                        >
+                          <TradeUpStickerImg
+                            onMouseEnter={() => setStickerHover(index + projectRow.item_id)}
+                            onMouseLeave={() => setStickerHover('')}
+                            className="h-full w-full origin-center scale-[1.18] object-contain object-center transition duration-300 ease-out"
+                            srcKey={sticker.sticker_url}
+                            alt={sticker.sticker_name}
+                            title={sticker.sticker_name}
+                          />
+                        </div>
                       </Link>
                     ))}
                   </div>
                 </div>
               </td>
 
-              <td className="table-cell px-6 py-3 text-sm text-gray-500 dark:text-gray-400 font-normal ">
+              <td className="table-cell whitespace-nowrap text-right text-sm font-normal text-gray-500 dark:text-gray-400">
                 {projectRow.item_paint_wear?.toString()?.substr(0, 9)}
               </td>
-              <td className="table-cell px-6 py-3 text-sm text-gray-500 dark:text-gray-400 font-medium">
-                <div
-                  className={classNames(
-                    isFull ? 'hidden' : '',
-                    'flex justify-center'
-                  )}
+              <td className="table-cell w-10 max-w-[2.5rem] shrink-0 px-0 py-1 text-center align-middle">
+                <Link
+                  to={{ pathname: steamMarketListingUrlForRow(projectRow) }}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Steam Community Market listing"
+                  className="mx-auto inline-flex shrink-0 justify-center rounded p-0.5 text-gray-500 transition-colors hover:bg-dark-level-four/60 hover:text-zinc-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-gray-500"
                 >
+                  <ArrowTopRightOnSquareIcon className="h-4 w-4 shrink-0" aria-hidden />
+                  <span className="sr-only">Open Steam market listing</span>
+                </Link>
+              </td>
+              <td className="table-cell w-14 shrink-0 align-middle text-center text-sm text-gray-500 dark:text-gray-400">
+                <div className={classNames(isFull ? 'hidden' : '', 'flex justify-center')}>
                   <button
-                    onClick={() => dispatch(tradeUpAddRemove(projectRow))}
+                    type="button"
+                    className={classNames(btnIcon, 'border-transparent bg-transparent p-1')}
+                    onClick={() => dispatch(tradeUpAddRemove(projectRow as ItemRowStorage))}
+                    title={
+                      tradeUpData.tradeUpProductsIDS.includes(projectRow.item_id)
+                        ? 'Remove from trade-up contract'
+                        : isFull
+                          ? 'Contract is full (10 items)'
+                          : 'Add to trade-up contract'
+                    }
                   >
                     <BeakerIcon
                       className={classNames(
-                        'text-gray-400 dark:text-gray-500 hover:text-yellow-400 dark:hover:text-yellow-400 h-5'
+                        'h-5 text-gray-400 hover:text-yellow-400 dark:text-gray-500 dark:hover:text-yellow-400'
                       )}
                       aria-hidden="true"
                     />
                   </button>
                 </div>
               </td>
-
-              <td className="hidden md:px-6 py-3 whitespace-nowrap text-right text-sm font-medium"></td>
             </tr>
+              );
+            })()
           ))}
         </tbody>
-      </table>
+        </table>
+        </div>
+      </div>
     </>
   );
 }

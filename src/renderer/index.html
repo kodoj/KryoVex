@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html class="dark">
+  <head>
+    <meta name="color-scheme" content="light dark">
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <title>KryoVex</title>
+  </head>
+  <style>
+    :root {
+      /* Windows custom titlebar is 28px tall (pt-7). */
+      --win-titlebar-h: 1.75rem;
+    }
+    .titleBarCustom {
+      -webkit-app-region: drag;
+    }
+    .titleButtons {
+      -webkit-app-region: no-drag;
+    }
+    .h-screen-fixed {
+      height: calc(100vh - var(--win-titlebar-h))
+    }
+
+    .h-screen-tradeup {
+      height: calc(100vh - 3.5rem)
+    }
+    .h-screen-tradeup-windows {
+      height: calc(100vh - var(--win-titlebar-h))
+    }
+
+    </style>
+  <body>
+    <script>var global = global || window;</script>
+  <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

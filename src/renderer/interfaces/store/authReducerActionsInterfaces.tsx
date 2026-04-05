@@ -1,4 +1,4 @@
-import { WalletInterface } from "../states";
+import { WalletInterface } from "../states.ts";
 
 export interface SignInActionPackage {
   displayName: string

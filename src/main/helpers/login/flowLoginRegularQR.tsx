@@ -1,7 +1,7 @@
 import { EAuthTokenPlatformType, LoginSession } from 'steam-session';
-import { LoginOptions } from '../../../shared/Interfaces.tsx/store';
-import { storeRefreshToken } from '../classes/steam/settings';
-import { emitterAccount } from '../../../emitters';
+import { LoginOptions } from '../../../shared/Interfaces-tsx/store.ts';
+import { storeRefreshToken } from '../classes/steam/settings.ts';
+import { emitterAccount } from '../../../emitters.ts';
 
 export async function flowLoginRegularQR(doStoreLogin: boolean): Promise<{
   responseStatus: keyof LoginOptions;

@@ -2,7 +2,7 @@
 var hasOwn = Object.prototype.hasOwnProperty;
 var toString = Object.prototype.toString;
 
-module.exports = function forEach (obj, fn, ctx) {
+export default function forEach (obj, fn, ctx) {
     if (toString.call(fn) !== '[object Function]') {
         throw new TypeError('iterator must be a function');
     }

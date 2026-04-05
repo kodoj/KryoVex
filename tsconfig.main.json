@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "noEmit": true,
+    "outDir": "dist/main",
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src/main/**/*.ts", "src/main/**/*.tsx"],
+  "exclude": ["src/renderer/**"]
+}

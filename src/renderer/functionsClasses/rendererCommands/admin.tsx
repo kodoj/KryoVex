@@ -8,13 +8,14 @@ import {
   setOS,
   setSourceValue,
   setSteamLoginShow,
-} from 'renderer/store/actions/settings';
+  setTradeUpSimulateOnly,
+} from 'renderer/store/slices/settings.ts';
 import {
   DispatchIPCBuildingObject,
   DispatchIPCHandleBuildingOptionsClass,
   DispatchStoreBuildingObject,
   DispatchStoreHandleBuildingOptionsClass,
-} from 'shared/Interfaces.tsx/login';
+} from 'shared/Interfaces-tsx/login.tsx';
 
 export class IPCCommunication {
   ipc = window.electron.ipcRenderer;
@@ -67,6 +68,10 @@ export class DispatchStore extends IPCCommunication {
     steamLoginShow: {
       name: 'steamLogin',
       action: setSteamLoginShow
+    },
+    tradeUpSimulateOnly: {
+      name: 'tradeUpSimulateOnly',
+      action: setTradeUpSimulateOnly
     }
   };
   constructor(dispatch: Function) {

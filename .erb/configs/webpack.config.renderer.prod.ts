@@ -1,19 +1,16 @@
-/**
- * Build config for electron renderer process
- */
-
 import path from 'path';
-import webpack from 'webpack';
+import webpack, { Configuration } from 'webpack';
 import HtmlWebpackPlugin from 'html-webpack-plugin';
 import MiniCssExtractPlugin from 'mini-css-extract-plugin';
 import { BundleAnalyzerPlugin } from 'webpack-bundle-analyzer';
 import CssMinimizerPlugin from 'css-minimizer-webpack-plugin';
-import { merge } from 'webpack-merge';
+import { mergeWithRules} from 'webpack-merge';
 import TerserPlugin from 'terser-webpack-plugin';
 import baseConfig from './webpack.config.base';
 import webpackPaths from './webpack.paths';
 import checkNodeEnv from '../scripts/check-node-env';
 import deleteSourceMaps from '../scripts/delete-source-maps';
+import CspHtmlWebpackPlugin from 'csp-html-webpack-plugin';
 
 checkNodeEnv('production');
 deleteSourceMaps();
@@ -25,95 +22,107 @@ const devtoolsConfig =
       }
     : {};
 
-export default merge(baseConfig, {
+baseConfig.externals = {};
+
+const config: Configuration = mergeWithRules({
+  externals: 'replace',
+})(baseConfig, {
   ...devtoolsConfig,
-
   mode: 'production',
-
-  target: ['web', 'electron-renderer'],
-
+  target: 'electron-renderer',
   entry: [
     'core-js',
     'regenerator-runtime/runtime',
     path.join(webpackPaths.srcRendererPath, 'index.tsx'),
   ],
-
   output: {
     path: webpackPaths.distRendererPath,
     publicPath: './',
     filename: 'renderer.js',
-    library: {
-      type: 'umd',
+    // UPDATED: Remove library config entirely (not needed for renderer bundle)
+  },
+  externals: {},
+  resolve: {
+    extensions: ['.js', '.jsx', '.json', '.ts', '.tsx'],
+    modules: [webpackPaths.srcPath, 'node_modules'],
+    fallback: {
+      events: require.resolve('events'),  // Confirm added for browser polyfill
     },
   },
-
   module: {
     rules: [
       {
-        test: /\.s?(a|c)ss$/,
+        test: /\.(ts|tsx|js|jsx)$/,
+        exclude: /node_modules/,
+        use: [
+          {
+            loader: 'ts-loader',
+            options: {
+              transpileOnly: true
+            }
+          }
+        ]
+      },
+      {
+        test: /\.css$/i,
+        include: /\.module\.css$/,
         use: [
           MiniCssExtractPlugin.loader,
           {
             loader: 'css-loader',
             options: {
-              modules: true,
               sourceMap: true,
               importLoaders: 1,
             },
           },
-          'sass-loader',
-          {
-            loader: 'postcss-loader',
-            options: {
-              postcssOptions: {
-                plugins: [require('tailwindcss'), require('autoprefixer')],
-              },
-            },
-          },
+          { loader: 'postcss-loader' },
         ],
-        include: /\.module\.s?(c|a)ss$/,
       },
       {
-        test: /\.s?(a|c)ss$/,
+        test: /\.css$/i,
+        exclude: /\.module\.css$/,
         use: [
           MiniCssExtractPlugin.loader,
-          'css-loader',
-          'sass-loader',
           {
-            loader: 'postcss-loader',
+            loader: 'css-loader',
             options: {
-              postcssOptions: {
-                plugins: [require('tailwindcss'), require('autoprefixer')],
-              },
+              sourceMap: true,
+              importLoaders: 1,
             },
           },
+          { loader: 'postcss-loader' },
         ],
-        exclude: /\.module\.s?(c|a)ss$/,
       },
-      //Font Loader
       {
         test: /\.(woff|woff2|eot|ttf|otf)$/i,
         type: 'asset/resource',
       },
-      // SVG Font
       {
         test: /\.svg(\?v=\d+\.\d+\.\d+)?$/,
-        use: {
-          loader: 'url-loader',
-          options: {
-            limit: 10000,
-            mimetype: 'image/svg+xml',
-          },
-        },
+        use: [
+          {
+            loader: 'url-loader',
+            options: {
+              limit: 10000,
+              mimetype: 'image/svg+xml',
+            },
+          }
+        ],
       },
-      // Common Image Formats
       {
         test: /\.(?:ico|gif|png|jpg|jpeg|webp)$/,
-        use: 'url-loader',
+        use: [
+          {
+            loader: 'url-loader'
+          }
+        ],
       },
     ],
   },
-
+  cache: {
+    type: 'filesystem',
+    cacheDirectory: path.resolve(webpackPaths.rootPath, 'node_modules/.cache/webpack/renderer-prod'),
+  },
   optimization: {
     minimize: true,
     minimizer: [
@@ -123,32 +132,24 @@ export default merge(baseConfig, {
       new CssMinimizerPlugin(),
     ],
   },
-
   plugins: [
-    /**
-     * Create global constants which can be configured at compile time.
-     *
-     * Useful for allowing different behaviour between development builds and
-     * release builds
-     *
-     * NODE_ENV should be production so that modules do not perform certain
-     * development checks
-     */
+    new webpack.ProvidePlugin({
+      global: 'globalThis',
+      events: require.resolve('events'),
+      _: 'lodash',
+    }),
     new webpack.EnvironmentPlugin({
       NODE_ENV: 'production',
       DEBUG_PROD: false,
     }),
-
     new MiniCssExtractPlugin({
       filename: 'style.css',
     }),
-
     new BundleAnalyzerPlugin({
       analyzerMode:
         process.env.OPEN_ANALYZER === 'true' ? 'server' : 'disabled',
       openAnalyzer: process.env.OPEN_ANALYZER === 'true',
     }),
-
     new HtmlWebpackPlugin({
       filename: 'index.html',
       template: path.join(webpackPaths.srcRendererPath, 'index.ejs'),
@@ -159,6 +160,26 @@ export default merge(baseConfig, {
       },
       isBrowser: false,
       isDevelopment: process.env.NODE_ENV !== 'production',
+      nodeModules: webpackPaths.appNodeModulesPath,
+    }),
+    new CspHtmlWebpackPlugin({  // NEW: Constructor with strict policy (auto-hashes remaining inline; allows HTTPS images)
+      'base-uri': "'self'",
+      'default-src': "'self'",
+      'script-src': ["'self'"],
+      'style-src': ["'self'"],
+      'img-src': ["'self'", 'data:', 'https:'],
+      'connect-src': ["'self'", 'https:'],
+      hashingMethod: 'sha256',
+      nonceEnabled: {
+        'script-src': false,
+        'style-src': false,
+      },
+      hashEnabled: {
+        'script-src': true,
+        'style-src': true,
+      },
     }),
   ],
 });
+
+export default config;

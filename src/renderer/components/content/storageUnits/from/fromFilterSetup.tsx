@@ -2,7 +2,7 @@ import {
   characteristics,
   containers,
   FilterManager,
-} from 'renderer/functionsClasses/filters/filters';
+} from 'renderer/functionsClasses/filters/filters.ts';
 
 export function fromGetFilterManager() {
   const ClassFilters = new FilterManager();

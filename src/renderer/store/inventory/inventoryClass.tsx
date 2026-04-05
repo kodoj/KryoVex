@@ -1,5 +1,5 @@
-import { Inventory } from "renderer/interfaces/states";
-import { InventoryMatchingObject } from "./inventoryInterfaces";
+import { Inventory } from "renderer/interfaces/states.tsx";
+import { InventoryMatchingObject } from "./inventoryInterfaces.tsx";
 
 const initialState: Inventory = {
     inventory: [],
@@ -7,7 +7,8 @@ const initialState: Inventory = {
     storageInventory: [],
     storageInventoryRaw: [],
     totalAccountItems: 0,
-    itemsLookUp: {}
+    itemsLookUp: {},
+    storageBulkLoadActive: false,
 };
 
 

@@ -1,16 +1,17 @@
-import { PencilIcon, TagIcon } from "@heroicons/react/solid";
+import { PencilIcon, TagIcon } from "@heroicons/react/24/solid";
 import { useState } from "react";
 import { useDispatch } from "react-redux";
 import { Link } from "react-router-dom";
-import { setRenameModal } from "renderer/store/actions/modalMove actions";
-import { createCSGOImage } from "../../../../functionsClasses/createCSGOImage";
-import { classNames } from "../../shared/filters/inventoryFunctions";
-
-
+import { setRenameModal } from "renderer/store/slices/modalRename.ts";
+import { IMAGE_FALLBACK_DATA_URI } from "renderer/functionsClasses/createCSGOImage.ts";
+import { markImageError, useCs2Image } from "renderer/hooks/useCs2Image.ts";
+import { btnDefault } from "../../shared/buttonStyles.ts";
+import { classNames } from "../../shared/filters/inventoryFunctions.ts";
 
 export function RowProduct({ itemRow }) {
   const dispatch = useDispatch();
   const [itemHover, setItemHover] = useState(false);
+  const imgSrc = useCs2Image(itemRow?.item_url, { fallback: IMAGE_FALLBACK_DATA_URI });
   let marketHashName = itemRow.item_name;
   if (itemRow.item_paint_wear != undefined) {
     marketHashName =
@@ -19,40 +20,57 @@ export function RowProduct({ itemRow }) {
 
   return (
     <>
-      <td className="table-cell px-6 py-3 max-w-0 w-full whitespace-nowrap overflow-hidden text-sm font-normal text-gray-900 dark:text-dark-white">
-        <div className="flex items-center space-x-3 lg:pl-2">
+      <td className="table-cell px-6 py-1 max-w-0 w-full overflow-hidden text-sm font-normal text-gray-900 dark:text-zinc-100">
+        <div className="flex items-center gap-3 lg:pl-2 min-w-0">
           <div
             className={classNames(
               itemRow.bgColorClass,
-              'flex-shrink-0 w-2.5 h-2.5 rounded-full'
+              'shrink-0 w-2.5 h-2.5 rounded-full'
             )}
             aria-hidden="true"
           />
           <Link
             to={{
-              pathname: `https://steamcommunity.com/market/listings/730/${marketHashName.replaceAll('Holo/Foil', 'Holo-Foil')}`,
+              pathname: `https://steamcommunity.com/market/listings/730/${encodeURIComponent(
+                marketHashName.replaceAll('Holo/Foil', 'Holo-Foil')
+              )}`,
             }}
             target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0"
           >
-            <div className="flex flex-shrink-0 -space-x-1">
+            <div
+              className={classNames(
+                'relative h-11 w-11 shrink-0 overflow-hidden rounded-md',
+                'bg-dark-level-two/90 ring-1 ring-gray-700/40'
+              )}
+            >
               <img
                 onMouseEnter={() => setItemHover(true)}
                 onMouseLeave={() => setItemHover(false)}
                 className={classNames(
                   itemHover
-                    ? 'transform-gpu hover:-translate-y-1 hover:scale-110'
+                    ? 'transform-gpu hover:-translate-y-0.5 hover:scale-[1.08]'
                     : '',
-                  'max-w-none h-11 w-11 transition duration-500 ease-in-out  dark:from-gray-300 dark:to-gray-400 rounded-full ring-2 ring-transparent object-cover bg-gradient-to-t from-gray-100 to-gray-300'
+                  'h-full w-full origin-center scale-[1.22] object-contain object-center transition duration-300 ease-out'
                 )}
-                src={
-                 createCSGOImage(itemRow.item_url)
-                }
+                src={imgSrc}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                draggable={false}
+                onError={(e) => {
+                  const img = e.currentTarget;
+                  markImageError(itemRow?.item_url);
+                  img.onerror = null;
+                  img.src = IMAGE_FALLBACK_DATA_URI;
+                }}
               />
             </div>
           </Link>
 
-          <span>
-            <span className="flex">
+          <span className="min-w-0">
+            <span className="flex min-w-0 dark:text-zinc-100">
               {itemRow.item_name !== '' ? (
                 itemRow.item_customname !== null ? (
                   itemRow.item_customname
@@ -64,13 +82,15 @@ export function RowProduct({ itemRow }) {
                   <a
                     href="https://forms.gle/6qZ8N2ES8CdeavcVA"
                     target="_blank"
-                    className="font-medium text-indigo-600 hover:text-indigo-500"
+                    rel="noreferrer"
+                    className="font-medium text-kryo-ice-400 hover:text-kryo-ice-300"
                   >
                     An error occurred. Please report this here.
                   </a>
                   <br />
                   <button
-                    className="px-2.5 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    type="button"
+                    className={classNames(btnDefault, 'px-2.5 py-1.5 text-xs')}
                     onClick={() =>
                       navigator.clipboard.writeText(JSON.stringify(itemRow))
                     }
@@ -107,15 +127,15 @@ export function RowProduct({ itemRow }) {
                       {itemRow.item_url.includes('casket') ? (
                         <Link
                           to=""
-                          className="text-gray-500"
+                          className="text-gray-500 dark:text-gray-300"
                           onClick={() =>
                             dispatch(
-                              setRenameModal(
-                                itemRow.item_id,
-                                itemRow.item_customname !== null
+                              setRenameModal({
+                                itemID: itemRow.item_id,
+                                itemName: itemRow.item_customname !== null
                                   ? itemRow.item_customname
                                   : itemRow.item_name
-                              )
+                              })
                             )
                           }
                         >
@@ -125,7 +145,7 @@ export function RowProduct({ itemRow }) {
                         ''
                       )}
             </span>
-            <span className="text-gray-500" title={itemRow.item_paint_wear}>
+            <span className="block truncate text-gray-500 dark:text-gray-400" title={itemRow.item_paint_wear}>
               {itemRow.item_customname !== null ? itemRow.item_name : ''}
               {itemRow.item_customname !== null &&
                 itemRow.item_paint_wear !== undefined

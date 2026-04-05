@@ -1,6 +1,8 @@
-import TitleBarClose from "./iconsLogo/close";
-import TitleBarMaximize from "./iconsLogo/maximize";
-import TitleBarMinimize from "./iconsLogo/minimize";
+import { btnToolbarIcon } from "./buttonStyles.ts";
+import { classNames } from "./filters/inventoryFunctions.ts";
+import TitleBarClose from "./iconsLogo/close.tsx";
+import TitleBarMaximize from "./iconsLogo/maximize.tsx";
+import TitleBarMinimize from "./iconsLogo/minimize.tsx";
 
 export default function TitleBarWindows() {
 
@@ -10,12 +12,11 @@ export default function TitleBarWindows() {
   return (
     <>
       {/* Page title & actions */}
-      <div className="border-b border-gray-200 dark:border-opacity-50 bg-white lg:fixed dark:bg-dark-level-two flex justify-end dark:text-dark-white titleBarCustom absolute w-full z-10">
+      <div className="frost-sep-b border-b-0 bg-white titleBarCustom fixed top-0 left-0 z-50 flex w-full justify-end dark:bg-dark-level-two dark:text-dark-white">
       <div className="dark:text-dark-white">
       <button
-        
         type="button"
-        className="inline-flex items-center h-7 w-12 px-2.5 py-1.5 border border-transparent text-xs font-medium shadow-sm text-white hover:bg-gray-100 dark:hover:bg-gray-800 titleButtons"
+        className={classNames(btnToolbarIcon, 'h-7 w-12 border-l border-gray-700/50 text-xs titleButtons')}
         onClick={() => sendAction('min')}
       >
       <TitleBarMinimize />
@@ -24,7 +25,7 @@ export default function TitleBarWindows() {
       <div className="dark:text-dark-white">
       <button
         type="button"
-        className="inline-flex items-center h-7 w-12 px-2.5 py-1.5 border border-transparent text-xs font-medium shadow-sm text-white hover:bg-gray-100 dark:hover:bg-gray-800 titleButtons "
+        className={classNames(btnToolbarIcon, 'h-7 w-12 border-l border-gray-700/50 text-xs titleButtons')}
         onClick={() => sendAction('max')}
       >
       <TitleBarMaximize />
@@ -33,7 +34,10 @@ export default function TitleBarWindows() {
       <div className="dark:text-dark-white">
       <button
         type="button"
-        className="inline-flex items-center h-7 w-12 px-2.5 py-1.5 pb-1 border hover:text-white border-transparent text-xs font-medium shadow-sm text-white hover:bg-red-500 hover:text-white titleButtons text-gray-800 dark:text-dark-white"
+        className={classNames(
+          btnToolbarIcon,
+          'h-7 w-12 border-l border-gray-700/50 text-xs titleButtons hover:bg-red-900/70 hover:text-white'
+        )}
         onClick={() => sendAction('close')}
       >
       <TitleBarClose />

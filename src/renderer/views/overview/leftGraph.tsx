@@ -1,12 +1,10 @@
 import { useSelector } from "react-redux";
-import { ReducerManager } from "renderer/functionsClasses/reducerManager";
-import { Settings } from "renderer/interfaces/states";
-import EmptyField from "./EmptyField";
-import OverallVolume from "./leftGraph/barChartOverall";
+import EmptyField from "./EmptyField.tsx";
+import OverallVolume from "./leftGraph/barChartOverall.tsx";
+import { selectSettings } from "@/store/slices/settings.ts";
 
 export default function LeftGraph() {
-    let ReducerClass = new ReducerManager(useSelector);
-    let settingsData: Settings = ReducerClass.getStorage(ReducerClass.names.settings)
+    let settingsData = useSelector(selectSettings);
 
     let by = settingsData.overview.by
     let left = settingsData.overview.chartleft
@@ -22,16 +20,11 @@ export default function LeftGraph() {
     if (Fitting == undefined) {
       Fitting = EmptyField
     }
-    console.log(Fitting)
-
-   
-  
- 
-  
+      
     return (
-      <>
-      <Fitting />
-      </>
+      <div className="flex h-full min-h-[min(360px,42vh)] min-w-0 flex-1 flex-col lg:min-h-[min(400px,48vh)]">
+        <Fitting />
+      </div>
     );
   }
   

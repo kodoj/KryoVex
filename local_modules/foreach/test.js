@@ -1,5 +1,5 @@
-var test = require('tape');
-var forEach = require('./index.js');
+import test from 'tape';
+import forEach from './index.js';
 
 
 test('second argument: iterator', function (t) {

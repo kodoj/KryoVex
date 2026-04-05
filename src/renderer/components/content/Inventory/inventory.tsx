@@ -1,11 +1,12 @@
-import { BrowserRouter as Router, Route } from 'react-router-dom';
-import InventoryFilters from './filterHeader';
-import InventoryRowsComponent from './inventoryRows';
+import InventoryFilters from './filterHeader.tsx';
+import InventoryRowsComponent from './inventoryRows.tsx';
 import { useState } from 'react';
-import { LoadingButton } from '../shared/animations';
-import { RefreshIcon } from '@heroicons/react/solid';
+import { LoadingButton } from '../shared/animations.tsx';
+import { ArrowPathIcon } from '@heroicons/react/24/solid';
+import { btnPrimary } from '../shared/buttonStyles.ts';
+import { classNames } from '../shared/filters/inventoryFunctions.ts';
 
-function content() {
+export default function content() {
   const [getLoadingButton, setLoadingButton] = useState(false);
   setLoadingButton;
 
@@ -17,23 +18,23 @@ function content() {
   return (
     <>
       {/* Page title & actions */}
-      <div className="border-b border-gray-200 px-4 py-4 sm:flex sm:items-center sm:justify-between sm:px-6 lg:px-8 dark:border-opacity-50">
+      <div className="frost-sep-b border-b-0 px-4 py-4 sm:flex sm:items-center sm:justify-between sm:px-6 lg:px-8">
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-medium leading-6 text-gray-900 dark:text-dark-white  sm:truncate">
             Inventory
           </h1>
         </div>
-        <div className="mt-4 flex sm:mt-0 sm:ml-4">
+        <div className="mt-4 flex flex-wrap items-center gap-3 sm:mt-0 sm:ml-4">
           <button
             type="button"
             onClick={() => refreshInventory()}
-            className="focus:outline-none focus:bg-dark-level-four order-1 ml-3  order-1 inline-flex items-center px-4 py-2 hover:border hover:shadow-sm dark:hover:bg-dark-level-four  text-sm font-medium rounded-md text-gray-700  hover:bg-gray-50 sm:order-0 sm:ml-0'"
-
+            className={classNames(btnPrimary, 'order-1 ml-3 px-4 py-2 sm:order-0 sm:ml-0')}
+            title="Refresh CS2 inventory from Steam"
           >
             {getLoadingButton ? (
               <LoadingButton />
             ) : (
-              <RefreshIcon
+              <ArrowPathIcon
                 className="h-4 w-4 text-gray-500 dark:text-dark-white"
                 aria-hidden="true"
               />
@@ -53,19 +54,10 @@ function content() {
         </div>
       </div>
 
-      {/* Projects table (small breakpoint and up) */}
-      <div className="hidden sm:block">
-        <div className="align-middle inline-block min-w-full border-b border-gray-200 dark:border-opacity-50">
-          <InventoryRowsComponent />
-        </div>
+      {/* Projects table (small breakpoint and up) — block + full width so scroll clientWidth ≠ table width (window-fit works) */}
+      <div className="frost-sep-b hidden w-full min-w-0 border-b-0 bg-dark-level-one px-2 py-3 sm:block sm:px-3">
+        <InventoryRowsComponent />
       </div>
     </>
-  );
-}
-export default function inventoryContent() {
-  return (
-    <Router>
-      <Route path="/" component={content} />
-    </Router>
   );
 }

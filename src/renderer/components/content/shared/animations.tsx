@@ -1,7 +1,7 @@
-import { classNames } from "./filters/inventoryFunctions"
+import { classNames } from "./filters/inventoryFunctions.ts"
 
 export const LoadingButton = ({className=""}) => (
-  <svg className={classNames(className,"animate-spin h-4 w-4 dark:text-dark-white ...")} viewBox="0 0 24 24">
+  <svg className={classNames(className, 'animate-spin h-4 w-4 text-current')} viewBox="0 0 24 24">
     <path
       className="opacity-75"
       fill="currentColor"

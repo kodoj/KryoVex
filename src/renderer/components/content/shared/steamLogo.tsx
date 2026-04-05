@@ -3,7 +3,8 @@ const SteamLogo = (props) => (
     xmlns="http://www.w3.org/2000/svg"
     viewBox="0 0 293.44 89.333"
     xmlSpace="preserve"
-    className="m-auto h-14 fill-current dark:text-dark-white"
+    /** Slight upward nudge — wordmark glyphs sit low in the viewBox vs. the roundel. */
+    className="m-auto block h-14 w-auto max-w-[min(100%,17.5rem)] -translate-y-0.5 fill-current dark:text-dark-white"
     {...props}
   >
     <g>

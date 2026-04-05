@@ -9,12 +9,13 @@ import {
   LinearScale,
 } from 'chart.js';
 import { useSelector } from 'react-redux';
-import { itemCategories } from 'renderer/components/content/shared/categories';
-import { categoriesRGB } from './categoriesRGB';
-import PieChart from '../charts/pieChart';
-import { ReducerManager } from 'renderer/functionsClasses/reducerManager';
-import { ConvertPrices } from 'renderer/functionsClasses/prices';
-import { Settings } from 'renderer/interfaces/states';
+import { itemCategories } from 'renderer/components/content/shared/categories.tsx';
+import { categoriesRGB } from './categoriesRGB.tsx';
+import PieChart from '../charts/pieChart.tsx';
+import { ConvertPrices } from 'renderer/functionsClasses/prices.ts';
+import { selectInventory } from 'renderer/store/slices/inventory.ts';
+import { selectSettings } from 'renderer/store/slices/settings.ts';
+import { selectPricing } from 'renderer/store/slices/pricing.ts';
 
 
 ChartJS.register(
@@ -27,7 +28,7 @@ ChartJS.register(
   Legend
 );
 
-function getData(ReducerClass, by) {
+function getData(by) {
   let categoriesFixed: Array<string> = [];
   let categoriesColors: any = {};
 
@@ -41,9 +42,9 @@ function getData(ReducerClass, by) {
     }
   });
 
-  let PricingConverter = new ConvertPrices(ReducerClass.getStorage(ReducerClass.names.settings), ReducerClass.getStorage(ReducerClass.names.pricing))
+  let PricingConverter = new ConvertPrices(useSelector(selectSettings), useSelector(selectPricing))
   // Go through inventory and find matching categories
-  const inventory = ReducerClass.getStorage(ReducerClass.names.inventory)
+  const inventory = useSelector(selectInventory);
   inventory.combinedInventory.forEach(element => {
     if (resultingData[element.category]) {
       if (by == 'price') {
@@ -90,8 +91,7 @@ function getData(ReducerClass, by) {
 
 }
 export default function ItemDistributionByVolume() {
-  const ReducerClass = new ReducerManager(useSelector)
-  let settingsData: Settings = ReducerClass.getStorage(ReducerClass.names.settings);
+  let settingsData = useSelector(selectSettings);
 
   let returnObject: any = {
     labels: [],
@@ -102,23 +102,18 @@ export default function ItemDistributionByVolume() {
 
   switch (settingsData.overview.by) {
     case 'price':
-      returnObject = getData(ReducerClass, settingsData.overview.by);
+      returnObject = getData(settingsData.overview.by);
       break
 
     case 'volume':
-      returnObject = getData(ReducerClass, settingsData.overview.by);
+      returnObject = getData(settingsData.overview.by);
       break
     default:
       break;
   }
 
-
-
-
-
   const data = {
     labels: returnObject.labels,
-
     datasets: [
       {
         label: 'Inventory',
@@ -127,13 +122,12 @@ export default function ItemDistributionByVolume() {
         borderColor: returnObject.borderColor,
         borderWidth: 1,
       }
-
     ],
   };
 
   return (
-    <>
-      <PieChart data={data} headerName='Category distribution' />
-    </>
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+      <PieChart data={data} headerName="Category distribution" />
+    </div>
   );
 }

@@ -1,7 +1,7 @@
 import { EAuthTokenPlatformType, LoginSession } from 'steam-session';
-import { StartLoginSessionWithCredentialsDetails } from 'steam-session/dist/interfaces-external';
-import { LoginOptions } from '../../../shared/Interfaces.tsx/store';
-import { storeRefreshToken } from '../classes/steam/settings';
+import { StartLoginSessionWithCredentialsDetails } from 'steam-session/dist/interfaces-external.js';
+import { LoginOptions } from '../../../shared/Interfaces-tsx/store.ts';
+import { storeRefreshToken } from '../classes/steam/settings.ts';
 
 export async function flowLoginRegular(
   loginDetails: StartLoginSessionWithCredentialsDetails,

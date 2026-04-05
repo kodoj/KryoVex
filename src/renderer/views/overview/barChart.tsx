@@ -1,14 +1,13 @@
 
-import { Bar } from 'react-chartjs-2';
+import { Bar } from '@uconn-its/react-chartjs-2-react19-temp';
 import { useSelector } from 'react-redux';
-import {itemCategories} from 'renderer/components/content/shared/categories';
+import {itemCategories} from 'renderer/components/content/shared/categories.tsx';
 import Chart from 'chart.js/auto';
+import { selectInventory } from '@/store/slices/inventory.ts';
 Chart
-
-
 export default function BarApp() {
-  let categoriesFixed: Array<string> = [];
 
+  let categoriesFixed: Array<string> = [];
   let resultingData = {} as any;
   itemCategories.forEach((element) => {
     categoriesFixed.push(element.name);
@@ -53,7 +52,7 @@ export default function BarApp() {
   };
 
   // Go through inventory and find matching categories
-  const inventory = useSelector((state: any) => state.inventoryReducer);
+  const inventory = useSelector(selectInventory);
   inventory.combinedInventory.forEach(element => {
     if (resultingData[element.category]) {
       resultingData[element.category].inventory = resultingData?.[element.category]?.inventory + element.combined_QTY
@@ -62,7 +61,6 @@ export default function BarApp() {
 
   // Go through Storage Units
   inventory.storageInventory.forEach(element => {
-    console.log(element)
     if (resultingData[element.category]) {
       resultingData[element.category].storageUnits = resultingData?.[element.category]?.storageUnits + element.combined_QTY
     }
@@ -76,7 +74,6 @@ export default function BarApp() {
     inventoryDataToUse.push(resultingData[category].inventory)
     storageUnitDataToUse.push(resultingData[category].storageUnits)
   });
-  console.log(storageUnitDataToUse)
 
 
   const data = {

@@ -1,68 +1,231 @@
 
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { searchFilter } from 'renderer/functionsClasses/filters/search';
-import { RequestPrices } from 'renderer/functionsClasses/prices';
-import { ReducerManager } from 'renderer/functionsClasses/reducerManager';
-import { State } from 'renderer/interfaces/states';
-import { classNames, sortDataFunction } from '../shared/filters/inventoryFunctions';
-import RenameModal from '../shared/modals & notifcations/modalRename';
-import { RowCollections } from './inventoryRows/collectionsRow';
-import { RowFloat } from './inventoryRows/floatRow';
-import { RowHeader, RowHeaderCondition, RowHeaderConditionNoSort } from './inventoryRows/headerRows';
-import { RowLinkInventory } from './inventoryRows/inventoryLinkRow';
-import { RowMoveable } from './inventoryRows/moveableRow';
-import { RowPrice } from './inventoryRows/priceRow';
-import { RowQTY } from './inventoryRows/QTYRow';
-import { RowRarity } from './inventoryRows/rarityRow';
-import { RowProduct } from './inventoryRows/rowName';
-import { RowStickersPatches } from './inventoryRows/stickerPatchesRow';
-import { RowStorage } from './inventoryRows/storageRow';
-import { RowTradehold } from './inventoryRows/tradeholdRow';
+import { searchFilter } from 'renderer/functionsClasses/filters/search.ts';
+import { RequestPrices } from 'renderer/functionsClasses/prices.ts';
+import { btnDefault } from '../shared/buttonStyles.ts';
+import { classNames, sortDataFunctionOffThread, sortDataFunctionSync } from '../shared/filters/inventoryFunctions.ts';
+import {
+  overviewTableScrollWrap,
+  overviewTableClassName,
+  overviewTheadClassName,
+  overviewTheadTrClassName,
+  overviewThCellOverride,
+  overviewTbodyClassName,
+  overviewTrClassName,
+} from '../shared/tableOverviewStyles.ts';
+import RenameModal from '../shared/modals-notifcations/modalRename.tsx';
+import { RowCollections } from './inventoryRows/collectionsRow.tsx';
+import { RowFloat } from './inventoryRows/floatRow.tsx';
+import {
+  RowHeader,
+  RowHeaderCondition,
+  RowHeaderConditionNoSort,
+  applyPersistedWidthsToTable,
+  requestWindowFitForTable,
+} from './inventoryRows/headerRows.tsx';
+import { RowLinkInventory } from './inventoryRows/inventoryLinkRow.tsx';
+import { RowMoveable } from './inventoryRows/moveableRow.tsx';
+import { RowPrice } from './inventoryRows/priceRow.tsx';
+import { RowQTY } from './inventoryRows/QTYRow.tsx';
+import { RowRarity } from './inventoryRows/rarityRow.tsx';
+import { RowProduct } from './inventoryRows/rowName.tsx';
+import { RowStickersPatches } from './inventoryRows/stickerPatchesRow.tsx';
+import { RowTradehold } from './inventoryRows/tradeholdRow.tsx';
+import { autoFitAllColumns } from './inventoryRows/headerRows.tsx';
+import { selectInventory } from 'renderer/store/slices/inventory.ts';
+import { selectInventoryFilters } from 'renderer/store/slices/inventoryFilters.ts';
+import { selectPricing } from 'renderer/store/slices/pricing.ts';
+import { selectSettings } from 'renderer/store/slices/settings.ts';
+import { selectAuth } from 'renderer/store/slices/auth.ts';
 
 
 function content() {
   const [getInventory, setInventory] = useState([] as any);
-  const ReducerClass = new ReducerManager(useSelector)
-  const currentState: State = ReducerClass.getStorage()
-  const inventory = currentState.inventoryReducer
-  const inventoryFilters = currentState.inventoryFiltersReducer
-  const pricesResult = currentState.pricingReducer
-  const settingsData = currentState.settingsReducer
+  const [visibleCount, setVisibleCount] = useState(250);
+  const inventory = useSelector(selectInventory);
+  const inventoryFilters = useSelector(selectInventoryFilters);
+  const pricesResult = useSelector(selectPricing);
+  const settingsData = useSelector(selectSettings);
+  const usrDetails = useSelector(selectAuth)
+  const tableId = 'inventory';
+  const colWidths = (settingsData as any)?.columnWidths?.[tableId] ?? {};
+  const didAutoFitRef = useRef(false);
+
+  const colStyle = (key: string) => {
+    const width = colWidths?.[key];
+    return width != null ? ({ width: `${width}px` } as any) : ({} as any);
+  };
 
   const dispatch = useDispatch();
 
   // Sort function
+  const inventoryToUse = useMemo(() => {
+    if (
+      inventoryFilters.inventoryFiltered.length === 0 &&
+      inventoryFilters.inventoryFilter.length === 0
+    ) {
+      return inventory.combinedInventory;
+    }
+    return inventoryFilters.inventoryFiltered;
+  }, [
+    inventory.combinedInventory,
+    inventoryFilters.inventoryFiltered,
+    inventoryFilters.inventoryFilter.length,
+  ]);
 
-  let inventoryToUse = [] as any;
-  if (
-    inventoryFilters.inventoryFiltered.length == 0 &&
-    inventoryFilters.inventoryFilter.length == 0
-  ) {
-    inventoryToUse = inventory.combinedInventory;
-  } else {
-    inventoryToUse = inventoryFilters.inventoryFiltered;
-  }
-  let PricingRequest = new RequestPrices(dispatch, settingsData, pricesResult)
-  PricingRequest.handleRequestArray(inventoryToUse)
+  // Filter first, then sort. Sorting the full list on every click is expensive.
+  const filteredBase = useMemo(() => {
+    return searchFilter(inventoryToUse as any, inventoryFilters as any, inventoryFilters as any) as any[];
+    // Depend only on inputs that actually affect filtering (not sortValue/sortBack).
+  }, [
+    inventoryToUse,
+    inventoryFilters.searchInput,
+    inventoryFilters.inventoryFilter,
+    inventoryFilters.categoryFilter,
+    inventoryFilters.rarityFilter,
+    inventoryFilters.storageFilter,
+  ]);
 
-  async function storageResult() {
-    let storageResult = await sortDataFunction(
-      inventoryFilters.sortValue,
-      inventoryToUse,
-      pricesResult.prices,
-      settingsData?.source?.title
-    );
+  // (intentionally no extra refs here)
 
-    setInventory(storageResult);
-  }
+  const sortedBase = useMemo(() => {
+    // For small lists, do it synchronously so it feels instant.
+    if (filteredBase.length <= 2500) {
+      return sortDataFunctionSync(
+        inventoryFilters.sortValue,
+        filteredBase,
+        pricesResult.prices,
+        settingsData?.source?.title
+      );
+    }
+    // For huge lists, keep previous rows until async sort completes.
+    return getInventory as any[];
+  }, [
+    filteredBase,
+    inventoryFilters.sortValue,
+    inventoryFilters.sortValue === 'Price' ? pricesResult.prices : null,
+    settingsData?.source?.title,
+  ]);
 
-  storageResult();
-  if (inventoryFilters.sortBack == true) {
-    getInventory.reverse();
-  }
+  // Async fallback for large lists.
+  useEffect(() => {
+    if (filteredBase.length <= 2500) return;
+    let cancelled = false;
+    const id = window.setTimeout(async () => {
+      try {
+        const result = await sortDataFunctionOffThread(
+          inventoryFilters.sortValue,
+          filteredBase,
+          pricesResult.prices,
+          settingsData?.source?.title
+        );
+        if (!cancelled) setInventory(result);
+      } catch {}
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
+  }, [
+    filteredBase,
+    inventoryFilters.sortValue,
+    inventoryFilters.sortValue === 'Price' ? pricesResult.prices : null,
+    settingsData?.source?.title,
+  ]);
 
-  let finalToUse = searchFilter(getInventory, inventoryFilters, inventoryFilters)
+  const processedInventory = useMemo(() => {
+    const base = [...(filteredBase.length <= 2500 ? (sortedBase as any[]) : getInventory)];
+    if (inventoryFilters.sortBack === true) base.reverse();
+    return base;
+  }, [filteredBase.length, getInventory, sortedBase, inventoryFilters.sortBack]);
+
+  const finalToUse = processedInventory;
+
+  useEffect(() => {
+    // Reset window when the underlying list/filter changes.
+    setVisibleCount(250);
+  }, [
+    inventoryToUse,
+    inventoryFilters.sortValue,
+    inventoryFilters.sortBack,
+    inventoryFilters.inventoryFilter.length,
+    inventoryFilters.searchInput,
+  ]);
+
+  const visibleRows = useMemo(() => finalToUse.slice(0, visibleCount), [finalToUse, visibleCount]);
+
+  useLayoutEffect(() => {
+    if (didAutoFitRef.current) return;
+    if (colWidths && Object.keys(colWidths).length > 0) return;
+    if (!visibleRows || visibleRows.length === 0) return;
+    const table = document.querySelector(`table[data-tableid="${tableId}"]`) as HTMLTableElement | null;
+    if (!table) return;
+    didAutoFitRef.current = true;
+    // Fit before paint so first visit is already correct.
+    autoFitAllColumns(table, dispatch);
+    requestAnimationFrame(() => {
+      autoFitAllColumns(table, dispatch);
+      requestWindowFitForTable(table);
+    });
+  }, [visibleRows.length, dispatch, tableId, colWidths]);
+
+  useLayoutEffect(() => {
+    if (!colWidths || Object.keys(colWidths).length === 0) return;
+    const table = document.querySelector(`table[data-tableid="${tableId}"]`) as HTMLTableElement | null;
+    if (!table) return;
+    applyPersistedWidthsToTable(table, colWidths as Record<string, number>);
+    requestWindowFitForTable(table);
+  }, [tableId, colWidths]);
+
+  useLayoutEffect(() => {
+    const table = document.querySelector(`table[data-tableid="${tableId}"]`) as HTMLTableElement | null;
+    if (!table || !visibleRows.length) return;
+    requestAnimationFrame(() => requestWindowFitForTable(table));
+  }, [tableId, visibleRows.length]);
+
+  useEffect(() => {
+    const table = document.querySelector(`table[data-tableid="${tableId}"]`) as HTMLTableElement | null;
+    if (!table || !visibleRows.length) return;
+    const t1 = window.setTimeout(() => requestWindowFitForTable(table), 0);
+    const t2 = window.setTimeout(() => requestWindowFitForTable(table), 180);
+    const t3 = window.setTimeout(() => requestWindowFitForTable(table), 420);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.clearTimeout(t3);
+    };
+  }, [tableId, visibleRows.length, colWidths]);
+
+  // Request pricing only for visible rows (and only once per item_id).
+  const requestedPriceIdsRef = useRef<Set<string>>(new Set());
+  const pricesRef = useRef(pricesResult);
+  pricesRef.current = pricesResult;
+  useEffect(() => {
+    const source = settingsData?.source?.title;
+    if (!source) return;
+    if (visibleRows.length === 0) return;
+
+    const toRequest: any[] = [];
+    for (const row of visibleRows) {
+      const id = row?.item_id;
+      if (!id) continue;
+      if (requestedPriceIdsRef.current.has(id)) continue;
+      requestedPriceIdsRef.current.add(id);
+      toRequest.push(row);
+    }
+
+    if (toRequest.length === 0) return;
+    const pricingRequest = new RequestPrices(dispatch, settingsData, pricesRef.current);
+    pricingRequest.handleRequestArray(toRequest, { scope: 'inv' });
+  }, [visibleRows, dispatch, settingsData]);
+
+  useEffect(() => {
+    // `combinedInventory` is a new array reference on most GC events (itemChanged, etc.).
+    // Only reset when cardinality or the filtered list changes — otherwise visible rows
+    // re-queue pricing for the same item_ids forever.
+    requestedPriceIdsRef.current = new Set();
+  }, [inventoryFilters.inventoryFiltered, inventory.combinedInventory?.length]);
 
   return (
     <>
@@ -79,7 +242,7 @@ function content() {
           role="list"
           className="mt-3 border-t border-gray-200 divide-y divide-gray-100 dark:divide-gray-500"
         >
-          {getInventory.map((project) => (
+          {visibleRows.map((project) => (
             <li key={project.item_id}>
               <a
                 href="#"
@@ -89,7 +252,7 @@ function content() {
                   <span
                     className={classNames(
                       project.bgColorClass,
-                      'w-2.5 h-2.5 flex-shrink-0 rounded-full'
+                      'w-2.5 h-2.5 shrink-0 rounded-full'
                     )}
                     aria-hidden="true"
                   />
@@ -103,14 +266,42 @@ function content() {
         </ul>
       </div>
 
-      <table className="min-w-full">
-        <thead>
-          <tr
-            className={classNames(
-              settingsData.os == 'win32' ? 'top-7' : 'top-0',
-              'border-gray-200 sticky'
-            )}
-          >
+      <div data-table-scroll className={overviewTableScrollWrap}>
+        <table
+          data-tableid={tableId}
+          data-table-width="fill"
+          className={classNames(overviewTableClassName, overviewThCellOverride)}
+        >
+        <colgroup>
+          <col data-colkey="Product name" style={colStyle('Product name')} />
+          {settingsData.columns.includes('Collections') ? (
+            <col data-colkey="Collection" style={colStyle('Collection')} />
+          ) : null}
+          {settingsData.columns.includes('Price') ? (
+            <col data-colkey="Price" style={colStyle('Price')} />
+          ) : null}
+          {settingsData.columns.includes('Stickers/patches') ? (
+            <col data-colkey="Stickers" style={colStyle('Stickers')} />
+          ) : null}
+          {settingsData.columns.includes('Float') ? (
+            <col data-colkey="wearValue" style={colStyle('wearValue')} />
+          ) : null}
+          {settingsData.columns.includes('Rarity') ? (
+            <col data-colkey="Rarity" style={colStyle('Rarity')} />
+          ) : null}
+          <col data-colkey="QTY" style={colStyle('QTY')} />
+          {settingsData.columns.includes('Moveable') ? (
+            <col data-colkey="Moveable" style={colStyle('Moveable')} />
+          ) : null}
+          {settingsData.columns.includes('Inventory link') ? (
+            <col data-colkey="Inventory link" style={colStyle('Inventory link')} />
+          ) : null}
+          {settingsData.columns.includes('Tradehold') ? (
+            <col data-colkey="tradehold" style={colStyle('tradehold')} />
+          ) : null}
+        </colgroup>
+        <thead className={overviewTheadClassName}>
+          <tr className={classNames(overviewTheadTrClassName, 'border-gray-200')}>
 
             <RowHeader headerName='Product' sortName='Product name' />
             <RowHeaderCondition headerName='Collection' sortName='Collection' condition='Collections' />
@@ -118,21 +309,20 @@ function content() {
             <RowHeaderCondition headerName='Stickers/Patches' sortName='Stickers' condition='Stickers/patches' />
             <RowHeaderCondition headerName='Float' sortName='wearValue' condition='Float' />
             <RowHeaderCondition headerName='Rarity' sortName='Rarity' condition='Rarity' />
-            <RowHeaderCondition headerName='Storage' sortName='StorageName' condition='Storage' />
-            <RowHeaderCondition headerName='Tradehold' sortName='tradehold' condition='Tradehold' />
             <RowHeader headerName='QTY' sortName='QTY' />
             <RowHeaderConditionNoSort headerName='Moveable' condition='Moveable' />
             <RowHeaderConditionNoSort headerName='Link' condition='Inventory link' />
+            <RowHeaderCondition headerName='Tradehold' sortName='tradehold' condition='Tradehold' />
 
 
 
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-100 dark:bg-dark-level-one dark:divide-gray-500">
-          {finalToUse.map((projectRow) => (
+        <tbody className={overviewTbodyClassName}>
+          {visibleRows.map((projectRow) => (
             <tr
               key={projectRow.item_id}
-
+              className={overviewTrClassName}
             >
 
               <RowProduct itemRow={projectRow}  />
@@ -141,19 +331,26 @@ function content() {
               <RowStickersPatches itemRow={projectRow} settingsData={settingsData} />
               <RowFloat itemRow={projectRow} settingsData={settingsData} />
               <RowRarity itemRow={projectRow} settingsData={settingsData} />
-              <RowStorage itemRow={projectRow}  settingsData={settingsData}/>
-              <RowTradehold itemRow={projectRow} settingsData={settingsData} />
               <RowQTY itemRow={projectRow} />
               <RowMoveable itemRow={projectRow} settingsData={settingsData} />
-              <RowLinkInventory itemRow={projectRow} settingsData={settingsData} userDetails={currentState.authReducer}/>
-              <td
-                key={Math.random().toString(36).substr(2, 9)}
-                className="hidden md:px-6 py-3 whitespace-nowrap text-right text-sm font-medium"
-              ></td>
+              <RowLinkInventory itemRow={projectRow} settingsData={settingsData} userDetails={usrDetails}/>
+              <RowTradehold itemRow={projectRow} settingsData={settingsData} />
             </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
+      {finalToUse.length > visibleCount ? (
+        <div className="py-4 flex justify-center">
+          <button
+            type="button"
+            className={classNames(btnDefault, 'px-4 py-2')}
+            onClick={() => setVisibleCount((c) => Math.min(finalToUse.length, c + 250))}
+          >
+            Load more ({visibleCount}/{finalToUse.length})
+          </button>
+        </div>
+      ) : null}
     </>
   );
 }

@@ -8,12 +8,15 @@ import {
   Legend,
   LinearScale,
 } from 'chart.js';
-import { Pie } from 'react-chartjs-2';
+import { Pie } from '@uconn-its/react-chartjs-2-react19-temp';
+import { useMemo } from 'react';
 import { useSelector } from 'react-redux';
-import {itemCategories} from 'renderer/components/content/shared/categories';
+import {itemCategories} from 'renderer/components/content/shared/categories.tsx';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
-import { ConvertPrices } from 'renderer/functionsClasses/prices';
-import { ReducerManager } from 'renderer/functionsClasses/reducerManager';
+import { ConvertPrices } from 'renderer/functionsClasses/prices.ts';
+import { selectInventory } from 'renderer/store/slices/inventory.ts';
+import { selectPricing } from 'renderer/store/slices/pricing.ts';
+import { selectSettings } from 'renderer/store/slices/settings.ts';
 
 
 ChartJS.register(
@@ -66,7 +69,7 @@ export default function RadarApp() {
           color: '#d6d3cd'
       },
       datalabels: {
-        formatter: (value, ctx) => {
+        formatter: (value: number, ctx: { chart: { data: { datasets: { data: any; }[]; }; }; }) => {
             let sum = 0;
             let dataArr = ctx.chart.data.datasets[0].data;
             dataArr.map(data => {
@@ -81,11 +84,12 @@ export default function RadarApp() {
   }
   };
 
-  const ReducerClass = new ReducerManager(useSelector)
-  let PricingConverter = new ConvertPrices(ReducerClass.getStorage(ReducerClass.names.settings), ReducerClass.getStorage(ReducerClass.names.pricing))
-  PricingConverter
+  const settingsData = useSelector(selectSettings);
+  const pricingData = useSelector(selectPricing);
+  useMemo(() => new ConvertPrices(settingsData, pricingData), [settingsData, pricingData]);
+
   // Go through inventory and find matching categories
-  const inventory = useSelector((state: any) => state.inventoryReducer);
+  const inventory = useSelector(selectInventory);
   inventory.combinedInventory.forEach(element => {
     if (resultingData[element.category]) {
       resultingData[element.category].inventory = resultingData?.[element.category]?.inventory + element.combined_QTY
@@ -111,10 +115,8 @@ export default function RadarApp() {
     finalDataToUse.push(resultingData[category].inventory + resultingData[category].storageUnits)
     storageUnitDataToUse.push(resultingData[category].storageUnits)
     rgbColorsToUse.push(categoriesColors[category])
-    console.log(category, categoriesColors[category])
     rgbColorsToUseBorder.push(categoriesColors[category]?.replace('0.2', '1'))
   });
-  console.log(rgbColorsToUse)
 
 
   const data = {

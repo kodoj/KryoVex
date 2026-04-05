@@ -53,18 +53,19 @@ export default class MenuBuilder {
   }
 
   buildDarwinTemplate(): MenuItemConstructorOptions[] {
+    const appName = app.getName();
     const subMenuAbout: DarwinMenuItemConstructorOptions = {
-      label: 'Electron',
+      label: appName,
       submenu: [
         {
-          label: 'About Casemove',
+          label: `About ${appName}`,
           selector: 'orderFrontStandardAboutPanel:',
         },
         { type: 'separator' },
         { label: 'Services', submenu: [] },
         { type: 'separator' },
         {
-          label: 'Hide Casemove',
+          label: `Hide ${appName}`,
           accelerator: 'Command+H',
           selector: 'hide:',
         },

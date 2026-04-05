@@ -1,4 +1,4 @@
-import { ItemRow } from "./items"
+import { ItemRow } from "./items.ts"
 
 export interface MessageMain {
     command: number

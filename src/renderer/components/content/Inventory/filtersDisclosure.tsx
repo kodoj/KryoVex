@@ -1,36 +1,30 @@
 import { Disclosure } from '@headlessui/react';
-import { useDispatch, useSelector } from 'react-redux';
-import {
-  filterInventoryAddOption,
-} from 'renderer/store/actions/filtersInventoryActions';
-import { searchFilter } from 'renderer/functionsClasses/filters/search';
-import { ConvertPrices } from 'renderer/functionsClasses/prices';
-import { ReducerManager } from 'renderer/functionsClasses/reducerManager';
-import { Filter, Filters } from 'renderer/interfaces/filters';
-import _ from 'lodash';
-import { State } from 'renderer/interfaces/states';
+import { useSelector } from 'react-redux';
+import { useAppDispatch } from 'renderer/store/configureStore.ts';
+import { selectInventoryFilters } from 'renderer/store/slices/inventoryFilters.ts';
+import { filterInventoryAddOption } from 'renderer/store/thunks/inventoryFilters.ts';
+import { searchFilter } from 'renderer/functionsClasses/filters/search.ts';
+import { ConvertPrices } from 'renderer/functionsClasses/prices.ts';
+import { Filter, Filters } from 'renderer/interfaces/filters.ts';
+import * as _ from 'lodash';
+import { selectInventory } from 'renderer/store/slices/inventory.ts';
+import { selectPricing } from 'renderer/store/slices/pricing.ts';
+import { selectSettings } from 'renderer/store/slices/settings.ts';
 
 
 
 export default function InventoryFiltersDisclosure({ClassFilters}) {
-  const dispatch = useDispatch();
-  const ReducerClass = new ReducerManager(useSelector)
-  const currentState: State = ReducerClass.getStorage()
+  const dispatch = useAppDispatch();
 
-
-  const inventoryFilters = currentState.inventoryFiltersReducer
-  const inventory = currentState.inventoryReducer
-  const pricesResult = currentState.pricingReducer
-  const settingsData = currentState.settingsReducer
+  const inventoryFilters = useSelector(selectInventoryFilters);
+  const inventory = useSelector(selectInventory)
+  const pricesResult = useSelector(selectPricing)
+  const settingsData = useSelector(selectSettings)
 
 
   // Update selected filter
   async function addRemoveFilter(filterValue: Filter) {
-    dispatch(
-      await filterInventoryAddOption(currentState,
-        filterValue
-      )
-    );
+    dispatch(filterInventoryAddOption(filterValue));
   }
 
 
@@ -46,17 +40,16 @@ export default function InventoryFiltersDisclosure({ClassFilters}) {
   }
 
   // Calculate inventory amount prices
-  let totalAmount = 0 as any;
-  let inventoryFilter = searchFilter(inventoryToUse, inventoryFilters, inventoryFilters)
-  const PricesClass = new ConvertPrices(settingsData, pricesResult)
+  let _totalAmount = 0 as any;
+  const inventoryFilter = searchFilter(inventoryToUse, inventoryFilters, inventoryFilters);
+  const PricesClass = new ConvertPrices(settingsData, pricesResult);
   inventoryFilter.forEach((projectRow) => {
     let itemRowPricing = PricesClass.getPrice(projectRow)
     if (itemRowPricing) {
       let individualPrice = projectRow.combined_QTY as number * itemRowPricing
-      totalAmount += individualPrice = individualPrice ? individualPrice : 0
+      _totalAmount += individualPrice = individualPrice ? individualPrice : 0
     }
   });
-  totalAmount = totalAmount.toFixed(0);
 
   let totalSeen = 0;
   let ignoreCategories: Array<Filter> = []
@@ -85,11 +78,11 @@ export default function InventoryFiltersDisclosure({ClassFilters}) {
 
 
   return (
-    <Disclosure.Panel className="border-t border-gray-200 py-10">
+    <Disclosure.Panel className="border-t border-kryo-ice-400/25 py-10 dark:border-kryo-ice-300/20">
           <div className="mx-auto grid grid-cols-1 gap-x-4 px-4 text-sm sm:px-6 md:gap-x-6 lg:px-8 ">
             <div className="grid grid-cols-1 gap-y-10 auto-rows-min md:grid-cols-3 md:gap-x-6">
             {Object.entries(ClassFilters.filters as Filters).map(([key, filterObject]) => (
-              <fieldset>
+              <fieldset key={key}>
               <legend className="block font-medium dark:text-dark-white">{key}</legend>
               <div className="pt-6 space-y-6 sm:pt-4 sm:space-y-4">
                 {filterObject.map((filter, optionIdx) => (
@@ -101,7 +94,7 @@ export default function InventoryFiltersDisclosure({ClassFilters}) {
                         id={`${filter.label + filter.include}-${optionIdx}`}
                         name="price[]"
                         type="checkbox"
-                        className="flex-shrink-0 h-4 w-4 border-gray-300 rounded text-indigo-600 focus:ring-indigo-500"
+                        className="shrink-0 h-4 w-4 border-gray-300 rounded text-kryo-ice-400 focus:ring-kryo-ice-400"
                         onClick={() => addRemoveFilter(filter)}
                         checked={
                           inventoryFilters.inventoryFilter.filter(filt => _.isEqual(filt, filter)).length > 0

@@ -1,5 +1,5 @@
-import { OverviewOptionsBy, OverviewOptionsLeftCharts, OverviewOptionsRightCharts } from "renderer/interfaces/overview";
-export const OveviewBy: OverviewOptionsBy = {
+import { OverviewOptionsBy, OverviewOptionsLeftCharts, OverviewOptionsRightCharts } from "renderer/interfaces/overview.tsx";
+export const OverviewBy: OverviewOptionsBy = {
     price: 'Price',
     volume: 'Volume'
 }

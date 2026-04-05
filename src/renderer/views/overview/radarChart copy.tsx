@@ -8,9 +8,9 @@ import {
   Legend,
   LinearScale,
 } from 'chart.js';
-import { Radar } from 'react-chartjs-2';
+import { Radar } from '@uconn-its/react-chartjs-2-react19-temp';
 import { useSelector } from 'react-redux';
-import {itemCategories} from 'renderer/components/content/shared/categories';
+import {itemCategories} from 'renderer/components/content/shared/categories.tsx';
 
 ChartJS.register(
   RadialLinearScale,
@@ -91,7 +91,6 @@ export default function RadarApp() {
 
   // Go through Storage Units
   inventory.storageInventory.forEach(element => {
-    console.log(element)
     if (resultingData[element.category]) {
       resultingData[element.category].storageUnits = resultingData?.[element.category]?.storageUnits + element.combined_QTY
     }
@@ -105,7 +104,6 @@ export default function RadarApp() {
     inventoryDataToUse.push(resultingData[category].inventory)
     storageUnitDataToUse.push(resultingData[category].storageUnits)
   });
-  console.log(storageUnitDataToUse)
 
 
   const data = {
@@ -126,7 +124,6 @@ export default function RadarApp() {
         borderColor: 'rgb(50, 91, 136, 1)',
         borderWidth: 1,
       },
-
     ],
   };
 

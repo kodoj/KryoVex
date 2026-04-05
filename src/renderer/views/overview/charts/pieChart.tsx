@@ -8,12 +8,12 @@ import {
   Legend,
   LinearScale,
 } from 'chart.js';
-import { Pie } from 'react-chartjs-2';
+import { Pie } from '@uconn-its/react-chartjs-2-react19-temp';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
-import { ConvertPricesFormatted } from 'renderer/functionsClasses/prices';
-import { ReducerManager } from 'renderer/functionsClasses/reducerManager';
+import { ConvertPricesFormatted } from 'renderer/functionsClasses/prices.ts';
 import { useSelector } from 'react-redux';
-import { Prices, Settings } from 'renderer/interfaces/states';
+import { selectSettings } from 'renderer/store/slices/settings.ts';
+import { selectPricing } from 'renderer/store/slices/pricing.ts';
 
 ChartJS.register(
   RadialLinearScale,
@@ -26,11 +26,8 @@ ChartJS.register(
 );
 
 export default function PieChart({ data, headerName }) {
-  const ReducerClass = new ReducerManager(useSelector);
-  let settingsData: Settings = ReducerClass.getStorage(
-    ReducerClass.names.settings
-  );
-  let pricingData: Prices = ReducerClass.getStorage(ReducerClass.names.pricing);
+  let settingsData = useSelector(selectSettings);
+  let pricingData = useSelector(selectPricing);
   const converter = new ConvertPricesFormatted(settingsData, pricingData);
 
   const title = (tooltipItems) => {
@@ -52,19 +49,35 @@ export default function PieChart({ data, headerName }) {
     return tooltipItems.label + ': ' + tooltipItems.raw  + ' - ' + percentageData[tooltipItems.dataIndex].toFixed(2) + '%'
   };
 
-  // Radar options
   const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    layout: {
+      padding: { top: 4, right: 2, bottom: 2, left: 2 },
+    },
+    /** Let the pie use most of the card; legend below avoids a tiny disc + tall empty strip. */
+    radius: '92%',
     plugins: {
       legend: {
+        position: 'bottom' as const,
+        align: 'center' as const,
         labels: {
-          position: 'right',
           color: '#d6d3cd',
+          boxWidth: 10,
+          boxHeight: 10,
+          padding: 6,
+          font: { size: 10 },
+          usePointStyle: true,
+          pointStyle: 'rectRounded' as const,
         },
       },
       title: {
         display: true,
         text: headerName,
         color: '#d6d3cd',
+        align: 'start' as const,
+        padding: { top: 0, bottom: 8 },
+        font: { size: 13, weight: 600 },
       },
       tooltip: {
         callbacks: {
@@ -108,11 +121,16 @@ export default function PieChart({ data, headerName }) {
   };
 
   return (
-    <>
-
-      <Pie data={data} plugins={
-         // @ts-ignore
-         [ChartDataLabels]} options={options} />
-    </>
+    <div className="flex h-full min-h-[280px] w-full min-w-0 flex-col">
+      <div className="relative min-h-[200px] flex-1 w-full min-w-0">
+        <Pie
+          data={data}
+          // @ts-ignore plugin options
+          plugins={[ChartDataLabels]}
+          // @ts-ignore
+          options={options}
+        />
+      </div>
+    </div>
   );
 }

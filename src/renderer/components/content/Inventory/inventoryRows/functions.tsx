@@ -1,21 +1,30 @@
 
+import { inventorySetSortStorage } from "renderer/store/inventory/inventoryActions.tsx";
+import { setSort } from "renderer/store/slices/moveFrom.ts";
+import { sortDataFunction } from "../../shared/filters/inventoryFunctions.ts";
+import { selectInventory } from "renderer/store/slices/inventory.ts";
+import { useSelector } from "react-redux";
+import { selectPricing } from "renderer/store/slices/pricing.ts";
+import { selectSettings } from "renderer/store/slices/settings.ts";
+import { selectInventoryFilters } from "renderer/store/slices/inventoryFilters.ts";
 
-import { State } from "renderer/interfaces/states";
-import { inventorySetSortStorage } from "renderer/store/inventory/inventoryActions";
-import { SetSortOption } from "renderer/store/actions/moveFromActions";
-import { sortDataFunction } from "../../shared/filters/inventoryFunctions";
+export async function onSortChange(dispatch: Function, sortValue: string) {
+    dispatch(setSort({sortValue}));
+    
+    const pricing = useSelector(selectPricing);
+    const settings = useSelector(selectSettings);
+    const inventory = useSelector(selectInventory);
+    const inventoryFilters = useSelector(selectInventoryFilters);
 
-export async function onSortChange(dispatch: Function, sortValue: string, currentState: State) {
-    dispatch(SetSortOption(sortValue));
     const storageResult = await sortDataFunction(
       sortValue,
-      currentState.inventoryReducer.storageInventory,
-      currentState.pricingReducer.prices, currentState.settingsReducer?.source?.title
+      inventory.storageInventory,
+      pricing.prices, settings?.source?.title
     );
     const storageResultFiltered = await sortDataFunction(
       sortValue,
-      currentState.inventoryFiltersReducer.storageFiltered,
-      currentState.pricingReducer.prices, currentState.settingsReducer?.source?.title
+      inventoryFilters.storageFiltered,
+      pricing.prices, settings?.source?.title
     );
     dispatch(inventorySetSortStorage(storageResult, storageResultFiltered));
   }

@@ -1,14 +1,12 @@
 import { useSelector } from "react-redux";
-import { ReducerManager } from "renderer/functionsClasses/reducerManager";
-import { Settings } from "renderer/interfaces/states";
-import EmptyField from "./EmptyField";
-import ItemDistributionByVolume from "./categoryDistribution/categoryDistribution";
+import EmptyField from "./EmptyField.tsx";
+import ItemDistributionByVolume from "./categoryDistribution/categoryDistribution.tsx";
+import { selectSettings } from "@/store/slices/settings.ts";
 
 export default function RightGraph() {
-    let ReducerClass = new ReducerManager(useSelector);
-    let settingsData: Settings = ReducerClass.getStorage(ReducerClass.names.settings)
+    let settingsData = useSelector(selectSettings);
 
-    let by = settingsData.overview.by
+    void settingsData.overview.by;
     let right = settingsData.overview.chartRight
 
     let returnObject = {
@@ -19,16 +17,11 @@ export default function RightGraph() {
     if (Fitting == undefined) {
         Fitting = EmptyField
       }
-    console.log(by)
-
-   
-  
- 
-  
+    
     return (
-      <>
-      <Fitting />
-      </>
+      <div className="flex h-full min-h-[min(360px,42vh)] min-w-0 flex-col lg:min-h-[min(400px,48vh)]">
+        <Fitting />
+      </div>
     );
   }
   

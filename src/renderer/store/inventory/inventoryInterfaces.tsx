@@ -1,4 +1,4 @@
-import { ItemRow } from "renderer/interfaces/items";
+import { ItemRow } from "renderer/interfaces/items.ts";
 
 // CONFIG
 export interface InventoryMethods {

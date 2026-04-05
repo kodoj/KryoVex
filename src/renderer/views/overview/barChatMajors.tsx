@@ -1,22 +1,19 @@
 
-import { Bar } from 'react-chartjs-2';
+import { Bar } from '@uconn-its/react-chartjs-2-react19-temp';
 import { useSelector } from 'react-redux';
-import {itemSubCategories} from 'renderer/components/content/shared/categories';
+import {itemSubCategories} from 'renderer/components/content/shared/categories.tsx';
 import Chart from 'chart.js/auto';
+import { selectInventory } from 'renderer/store/slices/inventory.ts';
 Chart
-
-
 export default function BarAppMajor() {
 
   // Bar options
-  // @ts-ignore
   const options = {
     plugins: {
       legend: {
         labels: {
           color: '#d6d3cd',
         },
-
       },
       title: {
           display: true,
@@ -27,7 +24,7 @@ export default function BarAppMajor() {
   };
 
   // Go through inventory and find matching categories
-  const inventory = useSelector((state: any) => state.inventoryReducer);
+  const inventory = useSelector(selectInventory);
 
   // Convert inventory to chart data
   let inventoryDataToUse: Array<number> = [];
@@ -48,13 +45,8 @@ export default function BarAppMajor() {
     inventoryDataToUse.push(categoryCounter)
     storageUnitDataToUse.push(storageCounter)
   });
-  console.log(storageUnitDataToUse)
-
-
   const data = {
     labels: Object.keys(itemSubCategories.majors),
-
-
     datasets: [
       {
         label: 'Inventory',
@@ -72,10 +64,8 @@ export default function BarAppMajor() {
       },
     ],
   };
-// @ts-ignore
   return (
     <>
-
       <Bar data={data} options={options} />
     </>
   );

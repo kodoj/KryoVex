@@ -1,5 +1,5 @@
 
-import { ConvertPricesFormatted } from "renderer/functionsClasses/prices";
+import { ConvertPricesFormatted } from "renderer/functionsClasses/prices.ts";
 
 
 export function RowPrice({itemRow, settingsData, pricesReducer}) { 
@@ -14,12 +14,12 @@ export function RowPrice({itemRow, settingsData, pricesReducer}) {
           {settingsData.columns.includes('Price') ?
           <td className="table-cell px-6 py-3 text-sm text-gray-500 font-medium">
             <div className="flex items-center space-x-2 justify-center rounded-full drop-shadow-lg">
-              <div className="flex flex-shrink-0 -space-x-1 text-gray-500 dark:text-gray-400 font-normal">
+              <div className="flex shrink-0 -space-x-1 text-gray-500 dark:text-gray-400 font-normal">
                 {formattedPriceCombined}
               </div>
             </div>
             <div className="flex items-center space-x-2 justify-center rounded-full drop-shadow-lg">
-              <div className="flex flex-shrink-0 -space-x-1 text-gray-500  text-xs font-normal">
+              <div className="flex shrink-0 -space-x-1 text-gray-500  text-xs font-normal">
                 {!price
                   ? ''
                   : itemRow.combined_QTY == 1

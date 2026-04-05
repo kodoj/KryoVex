@@ -1,9 +1,16 @@
 
-import { ItemRow, ItemRowStorage } from "renderer/interfaces/items";
-import { State } from "renderer/interfaces/states";
-import { HandleStorageData } from "./storageUnitsClass";
+import { ItemRow, ItemRowStorage } from "renderer/interfaces/items.ts";
+import { filterItemRows } from "renderer/functionsClasses/filters/custom.ts";
+import { sortDataFunction } from "renderer/components/content/shared/filters/inventoryFunctions.ts";
+import { setFilteredStorage } from "renderer/store/slices/inventoryFilters.ts";
+import { setStorageBulkLoadActive } from "renderer/store/slices/inventory.ts";
+import { store } from "renderer/store/configureStore.ts";
+import {
+  HandleStorageData,
+  type HandleStorageDeps,
+} from "./storageUnitsClass.tsx";
 
-function sorting(valueOne, valueTwo) {
+function sorting(valueOne: string | number, valueTwo: string | number) {
   if (valueOne < valueTwo) {
     return -1;
   }
@@ -28,11 +35,12 @@ class Sort {
 
 export async function getAllStorages(
   dispatch: Function,
-  state: State
+  deps: Omit<HandleStorageDeps, "deferFilteredStorage">
 ) {
-
+  const { inventory, moveFrom } = deps;
   // Filter the storage inventory
-  const casketResults = await state.inventoryReducer.inventory.filter(function (row) {
+  const storageSearch = (moveFrom.searchInputStorage || '').toLowerCase();
+  const casketResults = inventory.inventory.filter(function (row) {
     if (!row.item_url.includes('casket')) {
       return false; // skip
     }
@@ -40,30 +48,47 @@ export async function getAllStorages(
       return false; // skip
     }
     if (
-      state.moveFromReducer.searchInputStorage != '' &&
-      !row?.item_customname?.toLowerCase()?.includes(state.moveFromReducer.searchInputStorage)
+      storageSearch !== '' &&
+      !row?.item_customname?.toLowerCase()?.includes(storageSearch)
     ) {
       return false; // skip
     }
-    if (row.item_storage_total == 1000 && state.moveFromReducer.hideFull) {
+    if (row.item_storage_total == 1000 && moveFrom.hideFull) {
       return false; // skip
     }
     return true;
   });
 
-  async function sendArrayAddStorage(returnValue: Array<any>) {
-    let StorageClass = new HandleStorageData(dispatch, state)
-    let addArray: Array<ItemRow> = []
-    for (const [_key, project] of Object.entries(returnValue)) {
-      if (!state.moveFromReducer.activeStorages.includes(project.item_id)) {
-        addArray = [...addArray, ...await StorageClass.addStorage(
-          project as ItemRowStorage,
-          addArray
-
-        )]
+  async function sendArrayAddStorage(returnValue: Array<ItemRow | ItemRowStorage>) {
+    dispatch(setStorageBulkLoadActive(true));
+    try {
+      const alreadyActive = new Set(moveFrom.activeStorages);
+      const StorageClass = new HandleStorageData(dispatch, {
+        ...deps,
+        deferFilteredStorage: true,
+      });
+      for (const project of returnValue) {
+        if (alreadyActive.has(project.item_id)) continue;
+        await StorageClass.addStorage(project as ItemRowStorage, []);
       }
+      const st = store.getState();
+      const merged = st.inventory.storageInventory;
+      let filteredStorage = await filterItemRows(merged as any, st.inventoryFilters.storageFilter);
+      filteredStorage = await sortDataFunction(
+        st.moveFrom.sortValue,
+        filteredStorage,
+        st.pricing as any,
+        st.settings?.source?.title
+      );
+      dispatch(
+        setFilteredStorage({
+          storageFilter: st.inventoryFilters.storageFilter,
+          storageFiltered: filteredStorage,
+        })
+      );
+    } finally {
+      dispatch(setStorageBulkLoadActive(false));
     }
-    return
   }
 
   // Handle storage data

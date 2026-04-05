@@ -1,132 +1,153 @@
-import 'core-js/stable';
-import { BrowserWindow, app, ipcMain, session, shell } from 'electron';
-import * as fs from 'fs';
-import GlobalOffensive from 'globaloffensive';
-import os from 'os';
-import path from 'path';
-import 'regenerator-runtime/runtime';
-import { CurrencyReturnValue } from 'shared/Interfaces.tsx/IPCReturn';
-import { LoginCommandReturnPackage } from 'shared/Interfaces.tsx/store';
+import 'core-js/stable/index.js';
+import * as nodeUrl from 'node:url';
+import {
+  BrowserWindow,
+  Menu,
+  app,
+  ipcMain,
+  nativeImage,
+  screen,
+  shell,
+  type NativeImage,
+} from 'electron';
+import 'regenerator-runtime/runtime.js';
+import { CurrencyReturnValue } from '../shared/Interfaces-tsx/IPCReturn.tsx';
+import { LoginCommandReturnPackage } from '../shared/Interfaces-tsx/store.ts';
+import MenuBuilder from './menu.ts';
+import { resolveHtmlPath } from './util.ts';
+import { emitterAccount } from '../emitters.ts';
+import { flowLoginRegularQR } from './helpers/login/flowLoginRegularQR.tsx';
+
 import SteamUser from 'steam-user';
-import { LoginGenerator } from './helpers/classes/IPCGenerators/loginGenerator';
-import { currency } from './helpers/classes/steam/currency';
-import { fetchItems } from './helpers/classes/steam/items/getCommands';
-import {
-  currencyCodes,
-  pricingEmitter,
-  runItems,
-} from './helpers/classes/steam/pricing';
-import {
-  deleteUserData,
-  getValue,
-  setAccountPosition,
-  setValue,
-  storeUserAccount,
-} from './helpers/classes/steam/settings';
-import { login } from './helpers/classes/steam/steam';
-import { tradeUps } from './helpers/classes/steam/tradeup';
-import MenuBuilder from './menu';
-import { getGithubVersion } from './scripts/versionHelper';
-import { resolveHtmlPath } from './util';
-// import log from 'electron-log';
-import log from 'electron-log';
-import { autoUpdater } from 'electron-updater';
-import { emitterAccount } from '../emitters';
-import { flowLoginRegularQR } from './helpers/login/flowLoginRegularQR';
+import GlobalOffensive from 'globaloffensive';
+import ByteBuffer from 'bytebuffer';
+import fetchItems from './helpers/classes/steam/items/getCommands.ts';
+import { createCSGOImage } from '@/functionsClasses/createCSGOImage.ts';
+import { ItemRow } from '@/interfaces/items.ts';
 
-autoUpdater.logger = log;
-// @ts-ignore
-autoUpdater.logger.transports.file.level = 'info';
-log.info('App starting...');
+(async () => {
+  const fs = await import('fs');
+  const os = await import('os');
+  const path = await import('path');
+  const { LoginGenerator } = await import('./helpers/classes/IPCGenerators/loginGenerator.tsx');
+  const currencyModule = await import('./helpers/classes/steam/currency.ts');
+  const { currencyCodes, pricingEmitter, runItems: pricingItems } = await import('./helpers/classes/steam/pricing.ts');
+  const { deleteUserData, getValue, setAccountPosition, setValue, storeUserAccount } = await import('./helpers/classes/steam/settings.ts');
+  const { login } = await import('./helpers/classes/steam/steam.ts');
+  const { tradeUps } = await import('./helpers/classes/steam/tradeup.ts');
+  const log = (await import('electron-log')).default;
+  const electronUpdater = await import('electron-updater');
+  //@ts-ignore
+  const autoUpdater = electronUpdater.default.autoUpdater;
+  const Protos = (await import('globaloffensive/protobufs/generated/_load.js')).default;
+  const Language = (await import('globaloffensive/language.js')).default;
 
-app.on('ready', function () {
-  autoUpdater.checkForUpdatesAndNotify();
-});
+  autoUpdater.logger = log;
+  // @ts-ignore
+  autoUpdater.logger.transports.file.level = 'info';
+  log.info('App starting...');
 
-const find = require('find-process');
+  app.on('ready', function () {
+    autoUpdater.checkForUpdatesAndNotify();
+  });
 
-autoUpdater.on('checking-for-update', () => {
-  sendUpdaterStatusToWindow('Checking for update...');
-});
-autoUpdater.on('update-available', (_info) => {
-  sendUpdaterStatusToWindow('Update available.');
-});
-autoUpdater.on('update-not-available', (_info) => {
-  sendUpdaterStatusToWindow('Update not available.');
-});
-autoUpdater.on('error', (err) => {
-  sendUpdaterStatusToWindow('Error in auto-updater. ' + err);
-});
-autoUpdater.on('download-progress', (progressObj) => {
-  let log_message = 'Download speed: ' + progressObj.bytesPerSecond;
-  log_message = log_message + ' - Downloaded ' + progressObj.percent + '%';
-  log_message =
-    log_message +
-    ' (' +
-    progressObj.transferred +
-    '/' +
-    progressObj.total +
-    ')';
-  sendUpdaterStatusToWindow(log_message);
-});
-autoUpdater.on('update-downloaded', (_info) => {
-  sendUpdaterStatusToWindow('Update downloaded');
-});
+  autoUpdater.on('checking-for-update', () => {
+    sendUpdaterStatusToWindow('Checking for update...');
+  });
+  autoUpdater.on('update-available', (_info) => {
+    sendUpdaterStatusToWindow('Update available.');
+  });
+  autoUpdater.on('update-not-available', (_info) => {
+    sendUpdaterStatusToWindow('Update not available.');
+  });
+  autoUpdater.on('error', (err) => {
+    sendUpdaterStatusToWindow('Error in auto-updater. ' + err);
+  });
+  autoUpdater.on('download-progress', (progressObj) => {
+    let log_message = 'Download speed: ' + progressObj.bytesPerSecond;
+    log_message = log_message + ' - Downloaded ' + progressObj.percent + '%';
+    log_message =
+      log_message +
+      ' (' +
+      progressObj.transferred +
+      '/' +
+      progressObj.total +
+      ')';
+    sendUpdaterStatusToWindow(log_message);
+  });
+  autoUpdater.on('update-downloaded', (_info) => {
+    sendUpdaterStatusToWindow('Update downloaded');
+  });
 
-async function checkSteam(): Promise<{
-  pid?: number;
-  status: boolean;
-}> {
+async function checkSteam(): Promise<{ pid?: number; status: boolean }> {
+  const psList = (await import('ps-list')).default; // Dynamic import for ESM compat
   let steamName = 'steam.exe';
-  if (process.platform == 'linux') {
-    return {
-      status: false,
-    };
+  if (process.platform === 'darwin') steamName = 'steam_osx';
+  if (process.platform === 'linux') return { status: false };
+
+  const processes = await psList();
+  const steamProcs = processes.filter(p => p.name.toLowerCase() === steamName.toLowerCase());
+  if (steamProcs.length > 0) {
+    return { pid: steamProcs[0].pid, status: true };
   }
-  if (process.platform == 'darwin') {
-    return {
-      status: false,
-    };
-    steamName = 'steam_osx';
-  }
-  return await find('name', steamName, true)
-    .then(function (list) {
-      if (list.length > 0) {
-        return {
-          pid: list[0].pid,
-          status: true,
-        };
-      }
-      return {
-        status: false,
-      };
-    })
-    .catch(function (_err) {
-      return {
-        status: false,
-      };
-    });
+  return { status: false };
 }
 checkSteam();
 
+ipcMain.handle('get-app-version', () => app.getVersion());
+
 // Define helpers
-var ByteBuffer = require('bytebuffer');
-const Protos = require('globaloffensive/protobufs/generated/_load.js');
-const Language = require('globaloffensive/language.js');
-const currencyClass = new currency();
+const currencyClass = new currencyModule.Currency();
+await currencyClass.init();
 let tradeUpClass = new tradeUps();
 const ClassLoginResponse = new LoginGenerator();
 
 // Electron stuff
 let mainWindow: BrowserWindow | null = null;
+let activeSteamUser: SteamUser | null = null;
 ipcMain.on('ipc-example', async (event, arg) => {
   const msgTemplate = (pingPong: string) => `IPC test: ${pingPong}`;
   console.log(msgTemplate(arg));
   event.reply('ipc-example', msgTemplate('pong'));
 });
 
+let eventQueue: any[] = [];
+let rendererReady = false;
+
+// Registered once: fetch avatar using current logged-in SteamUser.
+ipcMain.handle('get-steam-profile-image', async (_event, steamID) => {
+  try {
+    const user = activeSteamUser;
+    if (!user) {
+      return createCSGOImage("econ/characters/customplayer_tm_separatist");
+    }
+    const personas = await new Promise((resolve, reject) => {
+      user.getPersonas([steamID], (err, p) => {
+        if (err) reject(err);
+        else resolve(p);
+      });
+    });
+    const profile = (personas as Record<string, { avatar_url_medium?: string }>)[steamID];
+    return profile?.avatar_url_medium || createCSGOImage("econ/characters/customplayer_tm_separatist");
+  } catch (error) {
+    console.error('Error fetching Steam profile in main:', error);
+    return createCSGOImage("econ/characters/customplayer_tm_separatist");
+  }
+});
+
+// Queue events until renderer is ready to avoid race conditions
+ipcMain.on('renderer-ready', () => {
+  rendererReady = true;
+  const win = mainWindow;
+  if (win && !win.isDestroyed()) {
+    eventQueue.forEach(msg => win.webContents.send('userEvents', msg));
+    eventQueue = [];
+    console.log('Flushed event queue to renderer');
+  }
+});
+
 if (process.env.NODE_ENV === 'production') {
-  const sourceMapSupport = require('source-map-support');
+  const sourceMapSupport = (await import('source-map-support'));
   sourceMapSupport.install();
 }
 
@@ -134,11 +155,11 @@ const isDevelopment =
   process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true';
 
 if (isDevelopment) {
-  require('electron-debug')();
+  (await import('electron-debug'));
 }
 
 // const installExtensions = async () => {
-//   const installer = require('electron-devtools-installer');
+//   const installer = (await import('electron-devtools-installer'));
 //   const forceDownload = !process.env.UPGRADE_EXTENSIONS;
 //   const extensions = ['REACT_DEVELOPER_TOOLS', 'REDUX_DEVTOOLS'];
 
@@ -151,10 +172,6 @@ if (isDevelopment) {
 // };
 
 const createWindow = async () => {
-  // if (isDevelopment) {
-  //   await installExtensions();
-  // }
-
   const RESOURCES_PATH = app.isPackaged
     ? path.join(process.resourcesPath, 'assets')
     : path.join(__dirname, '../../assets');
@@ -163,6 +180,22 @@ const createWindow = async () => {
     return path.join(RESOURCES_PATH, ...paths);
   };
 
+  const windowIconCandidates = [
+    getAssetPath('icon.png'),
+    getAssetPath('icon.ico'),
+    path.join(process.cwd(), 'assets', 'icon.png'),
+    path.join(process.cwd(), 'assets', 'icon.ico'),
+  ];
+  let windowIcon: NativeImage | undefined;
+  for (const p of windowIconCandidates) {
+    if (!fs.existsSync(p)) continue;
+    const img = nativeImage.createFromPath(p);
+    if (!img.isEmpty()) {
+      windowIcon = img;
+      break;
+    }
+  }
+
   let frameValue = true;
   if (process.platform == 'win32') {
     frameValue = false;
@@ -170,23 +203,68 @@ const createWindow = async () => {
 
   mainWindow = new BrowserWindow({
     show: false,
-    width: 1124,
-    height: 850,
-    minWidth: 1030,
-    minHeight: 800,
+    width: 1024,
+    height: 800,
+    ...(windowIcon ? { icon: windowIcon } : {}),
     frame: frameValue,
-    icon: getAssetPath('icon.png'),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      webSecurity: false,
+      //@ts-ignore
+      preload: (() => {
+        const preloadCjs = nodeUrl.fileURLToPath(new URL('./preload.cjs', import.meta.url));
+        const preloadMjs = nodeUrl.fileURLToPath(new URL('./preload.mjs', import.meta.url));
+        try {
+          return fs.existsSync(preloadCjs) ? preloadCjs : preloadMjs;
+        } catch {
+          return preloadMjs;
+        }
+      })(),
+      nodeIntegration: false,
+      contextIsolation: true,
       sandbox: false,
-      enableBlinkFeatures: 'CSSColorSchemeUARendering',
+      webSecurity: isDevelopment ? false : true,
+      allowRunningInsecureContent: isDevelopment ? true : false,
+      enableBlinkFeatures: '',
     },
   });
   mainWindow.webContents.session.clearStorageData();
 
+  // Standard right-click context menu for inputs (copy/paste) + selected text.
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const hasSelection = !!params.selectionText;
+    const isEditable = params.isEditable;
+    if (!hasSelection && !isEditable) return;
+
+    const template = [
+      ...(isEditable ? [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }] : []),
+      ...(hasSelection || isEditable ? [{ role: 'cut' }, { role: 'copy' }] : []),
+      ...(isEditable ? [{ role: 'paste' }, { role: 'delete' }] : []),
+      { type: 'separator' },
+      ...(isEditable ? [{ role: 'selectAll' }] : []),
+    ] as any[];
+
+    Menu.buildFromTemplate(template).popup({ window: mainWindow! });
+  });
+
+  // Fallback: preload can request a context menu directly (for inputs).
+  ipcMain.on('show-context-menu', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    const template = [
+      { role: 'undo' },
+      { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' },
+      { role: 'copy' },
+      { role: 'paste' },
+      { role: 'delete' },
+      { type: 'separator' },
+      { role: 'selectAll' },
+    ] as any[];
+    Menu.buildFromTemplate(template).popup({ window: win });
+  });
+
   ipcMain.on('download', (_event, info) => {
-    let fileP = path.join(os.homedir(), '/Downloads/casemove.csv');
+    let fileP = path.join(os.homedir(), '/Downloads/KryoVex.csv');
 
     fs.writeFileSync(fileP, info, 'utf-8');
     shell.showItemInFolder(fileP);
@@ -207,16 +285,16 @@ const createWindow = async () => {
   });
 
   mainWindow.on('closed', () => {
-    mainWindow = null;
+    mainWindow = null; // Assign null to mainWindow when closed
   });
 
   const menuBuilder = new MenuBuilder(mainWindow);
   menuBuilder.buildMenu();
 
   // Open urls in the user's browser
-  mainWindow.webContents.on('new-window', (event, url) => {
-    event.preventDefault();
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
+    return { action: 'deny' };
   });
 
   if (process.platform == 'linux') {
@@ -245,6 +323,64 @@ ipcMain.on('windowsActions', async (_event, message) => {
   }
 });
 
+function isSteamCommunityMarketNavigationUrl(raw: string): boolean {
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname.toLowerCase();
+    if (host !== 'steamcommunity.com' && host !== 'www.steamcommunity.com') return false;
+    return parsed.pathname.startsWith('/market/');
+  } catch {
+    return false;
+  }
+}
+
+ipcMain.handle('open-steamcommunity-url', async (_event, url: unknown) => {
+  if (typeof url !== 'string' || url.length === 0 || url.length > 12000) {
+    return { ok: false, error: 'invalid-url' as const };
+  }
+  if (!isSteamCommunityMarketNavigationUrl(url)) {
+    return { ok: false, error: 'not-allowed' as const };
+  }
+  await shell.openExternal(url);
+  return { ok: true as const };
+});
+
+ipcMain.handle('window-fit-content-width', async (_event, requestedContentWidth) => {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return false;
+  if (win.isMaximized() || win.isFullScreen()) return false;
+  // Match Tailwind `lg` (1024px): sidebar is `hidden lg:flex`, so shrinking below this collapses the nav.
+  const MIN_CONTENT_WIDTH = 1024;
+  const requested = Math.max(MIN_CONTENT_WIDTH, Math.round(Number(requestedContentWidth) || 0));
+  if (!Number.isFinite(requested) || requested <= 0) return false;
+
+  const bounds = win.getBounds();
+  const display = screen.getDisplayMatching(bounds);
+  const workArea = display?.workArea;
+  const [contentW] = win.getContentSize();
+  const [outerW] = win.getSize();
+  const frameDeltaW = Math.max(0, outerW - contentW);
+  const maxOuterW = Math.max(MIN_CONTENT_WIDTH, (workArea?.width ?? requested + frameDeltaW) - 8);
+  const targetOuterW = Math.min(requested + frameDeltaW, maxOuterW);
+  const targetContentWidth = Math.max(MIN_CONTENT_WIDTH, targetOuterW - frameDeltaW);
+  if (requested + frameDeltaW >= maxOuterW - 2) {
+    win.maximize();
+    return true;
+  }
+  const currentContent = win.getContentSize();
+  if (Math.abs(currentContent[0] - targetContentWidth) < 4) return true;
+
+  const nextX = workArea
+    ? Math.max(workArea.x, Math.min(bounds.x, workArea.x + workArea.width - targetOuterW))
+    : bounds.x;
+  win.setBounds(
+    { x: nextX, y: bounds.y, width: targetOuterW, height: bounds.height },
+    true
+  );
+  return true;
+});
+
 let currentLocale = 'da-dk';
 
 app.on('window-all-closed', () => {
@@ -258,7 +394,6 @@ app.on('window-all-closed', () => {
 
 let myWindow = null as any;
 const gotTheLock = app.requestSingleInstanceLock();
-const reactNombers = false;
 
 if (!gotTheLock) {
   app.quit();
@@ -273,37 +408,16 @@ if (!gotTheLock) {
   app
     .whenReady()
     .then(async () => {
+      if (isDevelopment) {
+        const { default: installExtension, REACT_DEVELOPER_TOOLS } = require('electron-devtools-installer');  // FIXED: Use require for CJS compat
+        try {
+          await installExtension(REACT_DEVELOPER_TOOLS);
+        } catch (e) {
+          console.error('Failed to install DevTools extensions:', e);
+        }
+      }
       currentLocale = app.getLocale();
       console.log('Currentlocal', currentLocale);
-
-      if (process.env.NODE_ENV === 'development' && reactNombers) {
-        let reactDevToolsPath = '';
-        // on windows
-        console.log(process.platform);
-        if (process.platform == 'win32') {
-          reactDevToolsPath = path.join(
-            os.homedir(),
-            '/AppData/Local/Google/Chrome/User Data/Default/Extensions/lmhkpmbekcpmknklioeibfkpmmfibljd/3.0.9_0'
-          );
-        }
-
-        // On linux
-        if (process.platform == 'linux') {
-          reactDevToolsPath = path.join(
-            os.homedir(),
-            '/.config/google-chrome/Default/Extensions/lmhkpmbekcpmknklioeibfkpmmfibljd/3.0.9_0'
-          );
-        }
-        // on macOS
-        if (process.platform == 'darwin') {
-          reactDevToolsPath = path.join(
-            os.homedir(),
-            '/Library/Application Support/Google/Chrome/Default/Extensions/lmhkpmbekcpmknklioeibfkpmmfibljd/3.0.9_0'
-          );
-        }
-
-        await session.defaultSession.loadExtension(reactDevToolsPath);
-      }
       createWindow();
       app.on('activate', () => {
         // On macOS it's common to re-create a window in the app when the
@@ -320,39 +434,24 @@ if (!gotTheLock) {
 
 var fetchItemClass = new fetchItems();
 
-// Version manager
 
-let gitHub = 0;
-ipcMain.on('needUpdate', async (event: any) => {
-  try {
-    if (gitHub == 0) {
-      getGithubVersion(process.platform).then((returnValue) => {
-        // Get the current version
-        const version = parseInt(
-          app.getVersion().toString().replaceAll('.', '')
-        );
-
-        // Check success status
-        let successStatus: boolean = false;
-        if (returnValue.version > version) {
-          successStatus = true;
-        } else {
-          successStatus = false;
-        }
-
-        // Send the event back back
-        event.reply('needUpdate-reply', {
-          requireUpdate: successStatus,
-          currentVersion: app.getVersion(),
-          githubResponse: returnValue,
-        });
-      });
+/* Pricing handlers */
+  pricingEmitter.on('result', (data) => {
+    if (mainWindow) {
+      mainWindow.webContents.send('pricing-result', data);
+      if (process.env.DEBUG_PRICING === 'true') {
+        console.log('Sent pricing-result to renderer:', data.rows.length, 'stats:', data.stats);
+      }
     }
-  } catch {
-    event.reply('needUpdate-reply', [false, app.getVersion(), 0]);
-    gitHub = 1;
-  }
-});
+  });
+  pricingEmitter.on('progress', (data) => {
+    if (mainWindow) {
+      mainWindow.webContents.send('pricing-progress', data);
+      if (process.env.DEBUG_PRICING === 'true') {
+        console.log('Sent pricing-progress:', data);
+      }
+    }
+  });
 
 // Return 1 = Success
 // Return 2 = Steam Guard
@@ -381,74 +480,72 @@ ipcMain.handle('close-steam', async () => {
   return false;
 });
 
+
 emitterAccount.on(
   'login',
   async (
     event,
     user: SteamUser,
-    csgo: GlobalOffensive,
+    cs2: GlobalOffensive,
     username: string,
     shouldRemember: boolean,
     secretKey: string | null
   ) => {
     // Success
-    user.once('accountInfo', (displayName) => {
+    user.once('accountInfo', (displayName: string) => {
       console.log('Logged into Steam as main ' + displayName);
-      getValue('pricing.currency').then((returnValue) => {
+      activeSteamUser = user;
+      getValue('pricing').then((pricing) => {
+        let returnValue = pricing?.currency;
         if (returnValue == undefined) {
-          setValue(
-            'pricing.currency',
-            currencyCodes?.[user?.wallet?.currency] || 'USD'
-          );
+          const newCurrency = currencyCodes?.[user?.wallet?.currency ?? ''] || 'EUR';
+          setValue('pricing', { ...pricing ?? {}, currency: newCurrency });
         }
       });
       console.log('logged on main');
 
       async function gameCoordinate(resolve: any = null) {
-        csgo.once('connectedToGC', () => {
+        cs2.once('connectedToGC', () => {
           if (resolve) {
             resolve('GC');
           }
           console.log('Connected to GC!');
-          if (csgo.haveGCSession) {
+          if (cs2.haveGCSession) {
             console.log('Have Session!');
-            fetchItemClass
-              .convertInventory(csgo.inventory)
-              .then((returnValue) => {
-                tradeUpClass
-                  .getTradeUp(returnValue)
-                  .then((newReturnValue: any) => {
-                    let walletToSend = user.wallet;
-                    if (walletToSend) {
-                      walletToSend.currency =
-                        currencyCodes?.[walletToSend?.currency];
-                    }
-                    const returnPackage: LoginCommandReturnPackage = {
-                      steamID: user.logOnResult.client_supplied_steamid,
-                      displayName,
-                      haveGCSession: csgo.haveGCSession,
-                      csgoInventory: newReturnValue,
-                      walletToSend: walletToSend,
-                    };
-
-                    startEvents(csgo, user);
-                    if (shouldRemember) {
-                      storeUserAccount(
-                        username,
-                        displayName,
-                        user.logOnResult.client_supplied_steamid,
-                        secretKey
-                      );
-                    }
-                    ClassLoginResponse.setResponseStatus('loggedIn');
-                    ClassLoginResponse.setPackage(returnPackage);
-                    sendLoginReply(event);
-                  });
+            fetchItemClass.convertInventory(cs2.inventory).then((returnValue) => {
+              tradeUpClass.getTradeUp(returnValue).then((newReturnValue) => {
+                const rows = newReturnValue as ItemRow[];
+                let walletToSend = user.wallet;
+                if (walletToSend) {
+                  walletToSend.currency = currencyCodes?.[walletToSend?.currency];
+                }
+                const returnPackage: LoginCommandReturnPackage = {
+                  steamID: user.steamID?.getSteamID64() ?? 'unknown',
+                  displayName,
+                  haveGCSession: cs2.haveGCSession,
+                  cs2Inventory: rows,
+                  walletToSend: walletToSend
+                    ? { ...walletToSend, currency: String(walletToSend.currency) }
+                    : { hasWallet: false, currency: 'EUR', balance: 0 },
+                };
+                startEvents(cs2, user);
+                if (shouldRemember) {
+                  storeUserAccount(
+                    username,
+                    displayName,
+                    user.steamID?.getSteamID64() ?? 'unknown',
+                    secretKey
+                  );
+                }
+                ClassLoginResponse.setResponseStatus('loggedIn');
+                ClassLoginResponse.setPackage(returnPackage);
+                sendLoginReply(event);
               });
+            });
           }
         });
       }
-
+      
       // // Create a timeout race to catch an infinite loading error in case the Steam account hasnt added the CSGO license
       // Run the normal version
 
@@ -474,7 +571,7 @@ emitterAccount.on(
       // Run the timeout
       let error = new Promise((resolve, _reject) => {
         user.once('error', (error) => {
-          if (error == 'Error: LoggedInElsewhere') {
+          if (error.message === 'Error: LoggedInElsewhere') {
             resolve('error');
           }
         });
@@ -504,7 +601,7 @@ emitterAccount.on(
         }
         if (value == 'time') {
           console.log(
-            'GC didnt start in time, adding CSGO to the library and retrying.'
+            'GC didnt start in time, adding CS2 to the library and retrying.'
           );
           user.requestFreeLicense([730], function (err, packageIds, appIds) {
             if (err) {
@@ -566,12 +663,12 @@ ipcMain.on(
     clientjstoken = null
   ) => {
     let user = new SteamUser();
-    let csgo = new GlobalOffensive(user);
+    let cs2 = new (GlobalOffensive as any)(user); // Temporarily cast to 'any' if the type definition is incomplete
     emitterAccount.emit(
       'login',
       event,
       user,
-      csgo,
+      cs2,
       username,
       shouldRemember,
       secretKey
@@ -599,7 +696,7 @@ emitterAccount.on('qrLogin:show', async (qrChallengeLogin) => {
 });
 ipcMain.on('startQRLogin', async (event, shouldRemember) => {
   let user = new SteamUser();
-  let csgo = new GlobalOffensive(user);
+  let cs2 = new GlobalOffensive(user);
   let loginClass = new login();
   emitterAccount.emit('qrLogin:cancel')
   flowLoginRegularQR(shouldRemember).then((returnValue) => {
@@ -611,7 +708,7 @@ ipcMain.on('startQRLogin', async (event, shouldRemember) => {
       'login',
       event,
       user,
-      csgo,
+      cs2,
       returnValue.session.accountName,
       shouldRemember
     );
@@ -632,11 +729,14 @@ ipcMain.on('startQRLogin', async (event, shouldRemember) => {
   });
 });
 
-ipcMain.on('qrLogin:cancel', async () => {
+const forwardQrLoginCancel = () => {
   emitterAccount.emit('qrLogin:cancel');
-});
+};
+ipcMain.on('qrLogin:cancel', forwardQrLoginCancel);
+// Renderer/preload sends this channel from `cancelQRLogin()`.
+ipcMain.on('cancelQRLogin', forwardQrLoginCancel);
 
-async function cancelLogin(user) {
+async function cancelLogin(user: SteamUser) {
   console.log('Cancel login');
   user.removeAllListeners('loggedOn');
   user.removeAllListeners('loginKey');
@@ -644,31 +744,64 @@ async function cancelLogin(user) {
   user.removeAllListeners('error');
 }
 
-function sendUpdaterStatusToWindow(text) {
+function sendUpdaterStatusToWindow(text: string) {
   log.info(text);
   mainWindow?.webContents.send('updater', [text]);
 }
 
-// Adds events listeners the user
 // Forward Steam notifications to renderer
-async function startEvents(csgo, user) {
+async function startEvents(cs2: GlobalOffensive, user: SteamUser) {
+   if (!mainWindow || !mainWindow.webContents) {
+    console.warn('mainWindow not ready, delaying startEvents');
+    setTimeout(() => startEvents(cs2, user), 1000);
+    return;
+  }
   // Pricing
-  const pricing = new runItems(user);
-  pricingEmitter.on('result', (message) => {
-    mainWindow?.webContents.send('pricing', [message]);
-  });
-  ipcMain.on('getPrice', async (_event, info) => {
-    pricing.handleItem(info);
-  });
-
+  const pricing = new pricingItems(user);
+  
   // Trade up handlers
   ipcMain.on('getTradeUpPossible', async (event, itemsToGet) => {
     tradeUpClass.getPotentitalOutcome(itemsToGet).then((returnValue) => {
-      pricing.handleTradeUp(returnValue);
+      pricing.handleTradeUp(returnValue as ItemRow[]);
       event.reply('getTradeUpPossible-reply', returnValue);
     });
   });
+
+  ipcMain.on('getPrice', async (_event, items, options) => {
+    try {
+      await pricing.handleItems(items, options);
+      if (process.env.DEBUG_PRICING === 'true') {
+        console.log('Pricing request handled for', items.length, 'items');
+      }
+    } catch (err) {
+      console.error('Pricing handler error:', err);
+    }
+  });
+  
   ipcMain.on('processTradeOrder', async (_event, idsToProcess, rarityToUse) => {
+    const envDry = ['1', 'true', 'yes'].includes(
+      String(
+        process.env.KRYOVEX_TRADEUP_DRY_RUN || process.env.CASEMOVE_TRADEUP_DRY_RUN || ''
+      ).toLowerCase()
+    );
+    const simulateOnly = (await getValue('tradeUpSimulateOnly')) !== false;
+    if (envDry || simulateOnly) {
+      log.info(
+        '[trade up] Skipped CS2 craft (simulate-only or KRYOVEX_TRADEUP_DRY_RUN / legacy CASEMOVE_TRADEUP_DRY_RUN). No items were consumed.'
+      );
+      return;
+    }
+    // Extra safety in development: real crafts need an explicit opt-in (production unchanged).
+    const isDev = process.env.NODE_ENV === 'development';
+    const allowRealInDev = ['1', 'true', 'yes'].includes(
+      String(process.env.CASEMOVE_ALLOW_REAL_TRADEUP || '').toLowerCase()
+    );
+    if (isDev && !allowRealInDev) {
+      log.warn(
+        '[trade up] Development build: blocked real CS2 craft. Set CASEMOVE_ALLOW_REAL_TRADEUP=1 to test real trade-ups, or use a production build.'
+      );
+      return;
+    }
     const rarObject = {
       0: '00000A00',
       1: '01000A00',
@@ -681,19 +814,13 @@ async function startEvents(csgo, user) {
       13: '0d000a00',
       14: '0e000a00',
     };
-    let idsToUse = [] as any;
-    idsToProcess.forEach((element) => {
-      idsToUse.push(parseInt(element));
-    });
-    let tradeupPayLoad = new ByteBuffer(
-      1 + 2 + idsToUse.length * 8,
-      ByteBuffer.LITTLE_ENDIAN
-    );
+    const idsToUse = idsToProcess.map((id: string) => parseInt(id));
+    const tradeupPayLoad = new ByteBuffer(1 + 2 + idsToUse.length * 8, ByteBuffer.LITTLE_ENDIAN);
     tradeupPayLoad.append(rarObject[rarityToUse], 'hex');
-    for (let id of idsToUse) {
+    for (const id of idsToUse) {
       tradeupPayLoad.writeUint64(id);
     }
-    await csgo._send(Language.Craft, null, tradeupPayLoad);
+    await (cs2 as any)._send(Language.Craft, null, tradeupPayLoad);
   });
 
   // Open container
@@ -703,138 +830,119 @@ async function startEvents(csgo, user) {
     for (let id of itemsToOpen) {
       containerPayload.writeUint64(parseInt(id));
     }
-    await csgo._send(Language.UnlockCrate, null, containerPayload);
+    await (cs2 as any)._send(Language.UnlockCrate, null, containerPayload);
   });
+
+  // Helper to send or queue userEvents
+  function sendOrQueueUserEvent(message: any[]) {
+    if (rendererReady && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('userEvents', message);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Sent userEvents to renderer');
+      }
+    } else {
+      console.warn('Renderer not ready, queuing userEvents');
+      eventQueue.push(message);
+    }
+  }
 
   // CSGO listeners
   // Inventory events
   async function startChangeEvents() {
-    console.log('Start events');
-    csgo.on('itemRemoved', (item) => {
-      if (
-        !Object.keys(item).includes('casket_id') &&
-        !Object.keys(item).includes('casket_contained_item_count')
-      ) {
-        console.log('Item ' + item.id + ' was removed');
-        fetchItemClass.convertInventory(csgo.inventory).then((returnValue) => {
-          tradeUpClass.getTradeUp(returnValue).then((newReturnValue: any) => {
-            mainWindow?.webContents.send('userEvents', [
-              1,
-              'itemRemoved',
-              [item, newReturnValue],
-            ]);
-          });
-        });
-      }
-    });
-
-    csgo.on('itemChanged', (item) => {
-      fetchItemClass.convertInventory(csgo.inventory).then((returnValue) => {
-        tradeUpClass.getTradeUp(returnValue).then((newReturnValue: any) => {
-          mainWindow?.webContents.send('userEvents', [
-            1,
-            'itemChanged',
-            [item, newReturnValue],
-          ]);
+  console.log('Start events');
+  cs2.on('itemRemoved', (item) => {
+    if (!Object.keys(item).includes('casket_id') && !Object.keys(item).includes('casket_contained_item_count')) {
+      console.log('Item ' + item.id + ' was removed');
+      fetchItemClass.convertInventory(cs2.inventory).then((returnValue) => {
+        (tradeUpClass.getTradeUp(returnValue) as Promise<ItemRow[]>).then((newReturnValue) => {
+          const message = [1, 'itemRemoved', [item, newReturnValue]];
+          sendOrQueueUserEvent(message);
         });
       });
-    });
-
-    csgo.on('itemAcquired', (item) => {
-      if (
-        !Object.keys(item).includes('casket_id') &&
-        !Object.keys(item).includes('casket_contained_item_count')
-      ) {
-        console.log('Item ' + item.id + ' was acquired');
-        removeInventoryListeners();
-        setTimeout(function () {
-          console.log('ran');
-          startChangeEvents();
-          fetchItemClass
-            .convertInventory(csgo.inventory)
-            .then((returnValue) => {
-              tradeUpClass.getTradeUp(returnValue).then((newReturnValue) => {
-                mainWindow?.webContents.send('userEvents', [
-                  1,
-                  'itemAcquired',
-                  [{}, newReturnValue],
-                ]);
-              });
-            });
-        }, 1000);
-
-        fetchItemClass.convertInventory(csgo.inventory).then((returnValue) => {
-          tradeUpClass.getTradeUp(returnValue).then((newReturnValue: any) => {
-            mainWindow?.webContents.send('userEvents', [
-              1,
-              'itemAcquired',
-              [item, newReturnValue],
-            ]);
-          });
-        });
-      }
-    });
-  }
-  startChangeEvents();
-
-  csgo.on('disconnectedFromGC', (reason) => {
-    console.log('Disconnected from GC - reason: ', reason);
-    mainWindow?.webContents.send('userEvents', [
-      3,
-      'disconnectedFromGC',
-      [reason],
-    ]);
+    }
   });
 
-  csgo.on('connectedToGC', () => {
+  cs2.on('itemChanged', (item) => {
+    fetchItemClass.convertInventory(cs2.inventory).then((returnValue) => {
+      (tradeUpClass.getTradeUp(returnValue) as Promise<ItemRow[]>).then((newReturnValue) => {
+        const message = [1, 'itemChanged', [item, newReturnValue]];
+        sendOrQueueUserEvent(message);
+      });
+    });
+  });
+
+  cs2.on('itemAcquired', (item) => {
+    if (!Object.keys(item).includes('casket_id') && !Object.keys(item).includes('casket_contained_item_count')) {
+      // console.log('Item ' + item.id + ' was acquired');
+      removeInventoryListeners();
+      fetchItemClass.convertInventory(cs2.inventory).then((returnValue) => {
+        (tradeUpClass.getTradeUp(returnValue) as Promise<ItemRow[]>).then((newReturnValue) => {
+          const message = [1, 'itemAcquired', [item, newReturnValue]];
+          sendOrQueueUserEvent(message);
+          // Pricing is driven by the renderer (`useAccountWidePricingRequest` + missing-only).
+          // `handleItems(fullInventory)` here re-hit Steam for every unique on each acquire (429 spam).
+        });
+      });
+    }
+  });
+}
+  startChangeEvents();
+
+  cs2.on('disconnectedFromGC', (reason) => {
+    console.log('Disconnected from GC - reason: ', reason);
+    sendOrQueueUserEvent([3, 'disconnectedFromGC', [reason]]);
+  });
+
+  cs2.on('connectedToGC', () => {
     console.log('Connected to GC!');
-    if (csgo.haveGCSession) {
-      mainWindow?.webContents.send('userEvents', [3, 'connectedToGC']);
+    if (cs2.haveGCSession) {
+      sendOrQueueUserEvent([3, 'connectedToGC']);
     }
   });
 
   // User listeners
-  // Steam Connection
-  user.on('error', (eresult, msg) => {
-    console.log('main', eresult, msg);
-    mainWindow?.webContents.send('userEvents', [2, 'fatalError']);
-    clearForNewSession();
-  });
-  user.on('disconnected', (eresult, msg) => {
-    console.log(eresult, msg);
-    mainWindow?.webContents.send('userEvents', [2, 'disconnected']);
-  });
+      // Steam Connection
+    user.on('error', (err) => {
+      console.log('main', err?.eresult, err?.message || err);
+      sendOrQueueUserEvent([2, 'fatalError']);
+      clearForNewSession();
+    });
+  
+    user.on('disconnected', (eresult, msg) => {
+      console.log(eresult, msg);
+      sendOrQueueUserEvent([2, 'disconnected']);
+    });
+
   user.on('loggedOn', () => {
-    mainWindow?.webContents.send('userEvents', [2, 'reconnected']);
+    sendOrQueueUserEvent([2, 'reconnected']);
   });
   user.on('wallet', (hasWallet, currency, balance) => {
-    let walletToSend = { hasWallet, currency, balance };
-    walletToSend.currency = currencyCodes?.[walletToSend?.currency];
+    const walletToSend = { hasWallet, currency: currencyCodes?.[currency] || 'EUR', balance };
     console.log('Wallet update: ', balance);
-    mainWindow?.webContents.send('userEvents', [4, walletToSend]);
+    sendOrQueueUserEvent([4, walletToSend]);
   });
 
   // Get commands from Renderer
   async function removeInventoryListeners() {
     console.log('Removed inventory listeners');
-    csgo.removeAllListeners('itemRemoved');
-    csgo.removeAllListeners('itemChanged');
-    csgo.removeAllListeners('itemAcquired');
+    cs2.removeAllListeners('itemRemoved');
+    cs2.removeAllListeners('itemChanged');
+    cs2.removeAllListeners('itemAcquired');
   }
-  ipcMain.on('refreshInventory', async () => {
-    removeInventoryListeners();
-    startChangeEvents();
 
-    fetchItemClass.convertInventory(csgo.inventory).then((returnValue) => {
-      tradeUpClass.getTradeUp(returnValue).then((newReturnValue) => {
-        mainWindow?.webContents.send('userEvents', [
-          1,
-          'itemAcquired',
-          [{}, newReturnValue],
-        ]);
-      });
+ipcMain.on('refreshInventory', async () => {
+  removeInventoryListeners();
+  startChangeEvents();
+  fetchItemClass.convertInventory(cs2.inventory).then((returnValue) => {
+    tradeUpClass.getTradeUp(returnValue).then((newReturnValue) => {
+      const message = [1, 'itemAcquired', [{}, newReturnValue]];
+      sendOrQueueUserEvent(message);
+      // Do not call `pricing.handleItems(rows)` — that walks the full inventory on every refresh
+      // and defeats missing-only / backup-fast-path logic in the renderer (terminal 429 loops).
     });
   });
+});
+
   // Retry connection
   ipcMain.on('retryConnection', async () => {
     user.gamesPlayed([]);
@@ -843,8 +951,8 @@ async function startEvents(csgo, user) {
   });
   // Rename Storage units
   ipcMain.on('renameStorageUnit', async (event, itemID, newName) => {
-    csgo.nameItem(0, itemID, newName);
-    csgo.once('itemCustomizationNotification', (itemIds, notificationType) => {
+    cs2.nameItem('0', String(itemID), newName);
+    cs2.once('itemCustomizationNotification', (itemIds, notificationType) => {
       if (
         notificationType ==
         GlobalOffensive.ItemCustomizationNotification.NameItem
@@ -856,7 +964,7 @@ async function startEvents(csgo, user) {
 
   // Set item positions
   ipcMain.on('setItemsPositions', async (_event, dictOfItems) => {
-    await csgo._send(
+    await (cs2 as any)._send(
       Language.SetItemPositions,
       Protos.CMsgSetItemPositions,
       dictOfItems
@@ -869,7 +977,7 @@ async function startEvents(csgo, user) {
     async (_event, item_id, item_name, itemClass) => {
       item_name;
 
-      await csgo._send(
+      await (cs2 as any)._send(
         Language.k_EMsgGCAdjustItemEquippedState,
         Protos.CMsgAdjustItemEquippedState,
         {
@@ -887,10 +995,10 @@ async function startEvents(csgo, user) {
     'removeFromStorageUnit',
     async (event, casketID, itemID, fastMode) => {
       removeInventoryListeners();
-      csgo.removeFromCasket(casketID, itemID);
+      cs2.removeFromCasket(casketID, itemID);
 
       if (fastMode == false) {
-        csgo.once(
+        cs2.once(
           'itemCustomizationNotification',
           (itemIds, notificationType) => {
             if (
@@ -908,7 +1016,7 @@ async function startEvents(csgo, user) {
 
   // Move to Storage Unit
   ipcMain.on('moveToStorageUnit', async (event, casketID, itemID, fastMode) => {
-    csgo.addToCasket(casketID, itemID);
+    cs2.addToCasket(casketID, itemID);
     //if (fastMode) {
 
     removeInventoryListeners();
@@ -916,7 +1024,7 @@ async function startEvents(csgo, user) {
     // }
 
     if (fastMode == false) {
-      csgo.once(
+      cs2.once(
         'itemCustomizationNotification',
         (itemIds, notificationType) => {
           if (
@@ -933,15 +1041,16 @@ async function startEvents(csgo, user) {
 
   // Get storage unit contents
   ipcMain.on('getCasketContents', async (event, casketID, _casketName) => {
-    await csgo.getCasketContents(casketID, async function (err, items) {
-      fetchItemClass.convertStorageData(items).then((returnValue) => {
-        tradeUpClass.getTradeUp(returnValue).then((newReturnValue: any) => {
-          event.reply('getCasketContent-reply', [1, newReturnValue]);
-          console.log('Casket contains: ', newReturnValue.length);
-        });
-      });
-
+    await cs2.getCasketContents(casketID, async function (err, items) {
       if (err) {
+        event.reply('getCasketContent-reply', [0]);
+        return;
+      }
+      try {
+        const returnValue = await fetchItemClass.convertStorageData(items);
+        const newReturnValue = await tradeUpClass.getTradeUp(returnValue);
+        event.reply('getCasketContent-reply', [1, newReturnValue]);
+      } catch {
         event.reply('getCasketContent-reply', [0]);
       }
     });
@@ -955,8 +1064,8 @@ async function startEvents(csgo, user) {
     console.log('Signout');
     // Remove for CSGO
     removeInventoryListeners();
-    csgo.removeAllListeners('connectedToGC');
-    csgo.removeAllListeners('disconnectedFromGC');
+    cs2.removeAllListeners('connectedToGC');
+    cs2.removeAllListeners('disconnectedFromGC');
 
     user.logOff();
     pricingEmitter.removeAllListeners('result');
@@ -977,15 +1086,24 @@ async function startEvents(csgo, user) {
 
 // Get currency
 ipcMain.on('getCurrency', async (event) => {
-  getValue('pricing.currency').then((returnValue) => {
-    currencyClass.getRate(returnValue).then((response) => {
-      let returnObject: CurrencyReturnValue = {
-        currency: returnValue,
+  try {
+    const pricing = await getValue('pricing'); // Await the pricing value
+    const returnValue = pricing?.currency;
+
+    if (returnValue) {
+      const response = await currencyClass.getRate(returnValue); // Await the rate retrieval
+      const returnObject: CurrencyReturnValue = {
+        currency: returnValue as string,
         rate: response as number,
       };
       event.reply('getCurrency-reply', returnObject);
-    });
-  });
+    } else {
+      event.reply('getCurrency-reply', { error: 'Currency not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching currency:', error);
+    event.reply('getCurrency-reply', { error: 'Failed to fetch currency' });
+  }
 });
 
 // Set initial settings
@@ -1041,3 +1159,4 @@ ipcMain.on('electron-store-set', async (event, key, val) => {
   event;
   setValue(key, val);
 });
+})().catch(console.error);
