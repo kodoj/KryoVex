@@ -146,13 +146,20 @@ ipcMain.on('renderer-ready', () => {
   }
 });
 
-if (process.env.NODE_ENV === 'production') {
-  const sourceMapSupport = (await import('source-map-support'));
-  sourceMapSupport.install();
+// Optional: improves stack traces for unpacked/prod-like runs. Packaged builds do not ship this module.
+if (process.env.NODE_ENV === 'production' && !app.isPackaged) {
+  try {
+    const m = await import('source-map-support');
+    const sms = (m as { default?: { install?: () => void }; install?: () => void }).default ?? m;
+    sms.install?.();
+  } catch {
+    /* ignore */
+  }
 }
 
 const isDevelopment =
-  process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true';
+  !app.isPackaged &&
+  (process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true');
 
 if (isDevelopment) {
   (await import('electron-debug'));
@@ -226,6 +233,7 @@ const createWindow = async () => {
       enableBlinkFeatures: '',
     },
   });
+  myWindow = mainWindow;
   mainWindow.webContents.session.clearStorageData();
 
   // Standard right-click context menu for inputs (copy/paste) + selected text.
@@ -285,7 +293,8 @@ const createWindow = async () => {
   });
 
   mainWindow.on('closed', () => {
-    mainWindow = null; // Assign null to mainWindow when closed
+    mainWindow = null;
+    myWindow = null;
   });
 
   const menuBuilder = new MenuBuilder(mainWindow);
@@ -396,6 +405,10 @@ let myWindow = null as any;
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
+  // Often looks like "won't launch" — a previous instance is still running (or stuck in Task Manager).
+  process.stderr.write(
+    'KryoVex: Another instance is already running. Close the app or end KryoVex.exe in Task Manager.\n'
+  );
   app.quit();
 } else {
   app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
@@ -418,14 +431,22 @@ if (!gotTheLock) {
       }
       currentLocale = app.getLocale();
       console.log('Currentlocal', currentLocale);
-      createWindow();
+      try {
+        await createWindow();
+      } catch (e) {
+        log.error('createWindow failed:', e);
+        console.error('createWindow failed:', e);
+      }
       app.on('activate', () => {
         // On macOS it's common to re-create a window in the app when the
         // dock icon is clicked and there are no other windows open.
-        if (mainWindow === null) createWindow();
+        if (mainWindow === null) void createWindow();
       });
     })
-    .catch(console.log);
+    .catch((err) => {
+      log.error('app.whenReady failed:', err);
+      console.error('app.whenReady failed:', err);
+    });
 }
 
 /**
@@ -790,7 +811,7 @@ async function startEvents(cs2: GlobalOffensive, user: SteamUser) {
       return;
     }
     // Extra safety in development: real crafts need an explicit opt-in (production unchanged).
-    const isDev = process.env.NODE_ENV === 'development';
+    const isDev = isDevelopment;
     const allowRealInDev = ['1', 'true', 'yes'].includes(
       String(process.env.KRYOVEX_ALLOW_REAL_TRADEUP || '').toLowerCase()
     );
@@ -835,7 +856,7 @@ async function startEvents(cs2: GlobalOffensive, user: SteamUser) {
   function sendOrQueueUserEvent(message: any[]) {
     if (rendererReady && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('userEvents', message);
-      if (process.env.NODE_ENV === 'development') {
+      if (isDevelopment) {
         console.log('Sent userEvents to renderer');
       }
     } else {

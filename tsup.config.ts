@@ -2,7 +2,9 @@ import { defineConfig } from 'tsup';
 
 export default defineConfig(() => {
   const isProd = process.env.BUILD_TARGET === 'prod';
-  const outDir = isProd ? 'release/app/dist/main' : 'dist/main';
+  // Always emit under repo-root `dist/main` so `electron .` matches package.json `main`
+  // after `npm run build`. Packaging copies `dist/` → `release/app/dist/`.
+  const outDir = 'dist/main';
   const shouldClean = isProd; // Never clean in dev/watch; it races electronmon.
   const shouldSourceMap = false; // Sourcemaps are expensive; keep dev fast.
   const skipNodeModulesBundle = true;

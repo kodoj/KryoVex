@@ -11,6 +11,13 @@ interface DarwinMenuItemConstructorOptions extends MenuItemConstructorOptions {
   submenu?: DarwinMenuItemConstructorOptions[] | Menu;
 }
 
+function isDevMenu(): boolean {
+  return (
+    !app.isPackaged &&
+    (process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true')
+  );
+}
+
 export default class MenuBuilder {
   mainWindow: BrowserWindow;
 
@@ -19,10 +26,7 @@ export default class MenuBuilder {
   }
 
   buildMenu(): Menu {
-    if (
-      process.env.NODE_ENV === 'development' ||
-      process.env.DEBUG_PROD === 'true'
-    ) {
+    if (isDevMenu()) {
       this.setupDevelopmentEnvironment();
     }
 
@@ -186,11 +190,7 @@ export default class MenuBuilder {
     subMenuHelp;
     subMenuWindow;
 
-    const subMenuView =
-      process.env.NODE_ENV === 'development' ||
-      process.env.DEBUG_PROD === 'true'
-        ? subMenuViewDev
-        : subMenuViewProd;
+    const subMenuView = isDevMenu() ? subMenuViewDev : subMenuViewProd;
 
     return [subMenuAbout, subMenuEdit, subMenuView];
   }
@@ -215,9 +215,7 @@ export default class MenuBuilder {
       },
       {
         label: '&View',
-        submenu:
-          process.env.NODE_ENV === 'development' ||
-          process.env.DEBUG_PROD === 'true'
+        submenu: isDevMenu()
             ? [
                 {
                   label: '&Reload',

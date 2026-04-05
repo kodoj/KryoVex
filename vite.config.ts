@@ -40,7 +40,7 @@ export default defineConfig(({ mode }) => {
     plugins,
     root: 'src/renderer',
     build: {
-      outDir: process.env.BUILD_TARGET === 'prod' ? '../../release/app/dist/renderer' : '../../dist/renderer',
+      outDir: '../../dist/renderer',
       emptyOutDir: true,
       sourcemap: isDebugProd ? 'inline' : false,
       minify: 'terser',

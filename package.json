@@ -1,7 +1,7 @@
 {
   "name": "kryovex",
   "productName": "KryoVex",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "description": "Counter-Strike 2 Storage unit manager that helps you move items in bulk without the clicking.",
   "scripts": {
     "build": "concurrently \"npm run build:main\" \"npm run build:renderer\"",
@@ -10,7 +10,8 @@
     "clean": "rimraf dist release node_modules/.cache .vite && mkdirp release/app && node scripts/sync-release-app-package.mjs",
     "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir release/app",
     "lint": "cross-env NODE_ENV=development eslint . --cache --ext .js,.jsx,.ts,.tsx",
-    "package:compile": "node --import tsx ./.erb/scripts/clean.js dist && node scripts/sync-release-app-package.mjs && npm run build && cd release/app && npm install --omit=dev && cd ../..",
+    "package:compile": "node --import tsx ./.erb/scripts/clean.js dist && node scripts/sync-release-app-package.mjs && npm run build && node scripts/sync-release-dist.mjs && cd release/app && npm install --omit=dev && cd ../..",
+    "electron:release": "electron release/app",
     "package:local": "npm run package:compile && electron-builder build --publish never",
     "package": "npm run package:compile && electron-builder build --publish always",
     "package:win": "npm run package:compile && electron-builder build --win --publish never",
@@ -21,7 +22,9 @@
     "dev": "cross-env NODE_ENV=development BUILD_TARGET=dev node scripts/dev-fast.mjs",
     "dev:watch": "cross-env NODE_ENV=development BUILD_TARGET=dev concurrently --names \"TSUP,VITE\" --prefix \"[{time} {name}]\" --timestamps --timestamp-format \"HH:mm:ss.SSS\" \"tsup --watch\" \"vite\"",
     "test": "cross-env NODE_ENV=development jest",
+    "preelectron-dev": "node scripts/check-main-built.mjs",
     "electron-dev": "electron .",
+    "preelectron-trace": "node scripts/check-main-built.mjs",
     "electron-trace": "electron --trace-warnings .",
     "typecheck": "tsc --noEmit",
     "icons": "node scripts/sync-app-icon.mjs",
@@ -29,6 +32,7 @@
     "logo:alpha": "node scripts/transparent-logo-bg.mjs"
   },
   "type": "module",
+  "main": "dist/main/main.mjs",
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
       "cross-env NODE_ENV=development eslint --cache"
@@ -44,6 +48,7 @@
     ]
   },
   "build": {
+    "electronVersion": "41.1.1",
     "productName": "KryoVex",
     "icon": "icon.png",
     "appId": "com.kryovex.app",
