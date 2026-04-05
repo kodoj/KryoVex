@@ -298,18 +298,18 @@ function content() {
                         title={projectRow.item_name}
                       />
                     ) : (
-                      <Link
-                        to={{
-                          pathname: `https://steamcommunity.com/market/listings/730/${
-                            projectRow.item_paint_wear == undefined
-                              ? projectRow.item_name
-                              : projectRow.item_name +
-                                ' (' +
-                                projectRow.item_wear_name +
-                                ')'
-                          }`,
-                        }}
+                      <a
+                        href={`https://steamcommunity.com/market/listings/730/${encodeURIComponent(
+                          (projectRow.item_paint_wear == undefined
+                            ? projectRow.item_name
+                            : projectRow.item_name +
+                              ' (' +
+                              projectRow.item_wear_name +
+                              ')'
+                          ).replaceAll('Holo/Foil', 'Holo-Foil')
+                        )}`}
                         target="_blank"
+                        rel="noopener noreferrer"
                         title="View on Steam Community Market"
                       >
                         <img
@@ -324,7 +324,7 @@ function content() {
                           src={createCSGOImage(projectRow.item_url)}
                           alt=""
                         />
-                      </Link>
+                      </a>
                     )}
                   </div>
                   <span>
@@ -469,12 +469,13 @@ function content() {
                 <div className="flex items-center space-x-2 justify-center rounded-full drop-shadow-lg">
                   <div className="flex shrink-0 -space-x-1">
                     {projectRow.stickers?.map((sticker, index) => (
-                      <Link
+                      <a
                         key={`${sticker.sticker_type}-${sticker.sticker_name}-${index}`}
-                        to={{
-                          pathname: `https://steamcommunity.com/market/listings/730/${sticker.sticker_type} | ${sticker.sticker_name}`,
-                        }}
+                        href={`https://steamcommunity.com/market/listings/730/${encodeURIComponent(
+                          `${sticker.sticker_type} | ${sticker.sticker_name}`
+                        )}`}
                         target="_blank"
+                        rel="noopener noreferrer"
                         >
                         <img
                           key={index}
@@ -494,7 +495,7 @@ function content() {
                           alt={sticker.sticker_name}
                           title={sticker.sticker_name}
                         />
-                      </Link>
+                      </a>
                     ))}
                   </div>
                 </div>

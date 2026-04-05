@@ -2,45 +2,21 @@
 
 **KryoVex** is a desktop application for **Counter-Strike 2** that helps you move items in and out of **Storage Units** in bulk, inspect inventory and storage, view values, run trade-ups, and more. It connects to Steam using [steam-user](https://github.com/DoctorMcKay/node-steam-user) and [globaloffensive](https://github.com/DoctorMcKay/node-globaloffensive) to talk to the CS2 game coordinator.
 
+**KryoVex 1.x** is its own release line (version numbers are not tied to any earlier public tree). **GPL-3.0-or-later** — see [`LICENSE`](LICENSE). This codebase includes derivative work originally published as open source under GPL; historical source is available at [nombersDev/casemove](https://github.com/nombersDev/casemove).
+
 ---
 
-## Relation to Casemove
+## Toolchain
 
-KryoVex is a **revival and continuation** of the open-source app previously known as **Casemove**, whose last public tree is [nombersDev/casemove](https://github.com/nombersDev/casemove). **Active development continues in this repository** under the **GNU General Public License v3** (see [`LICENSE`](LICENSE)); the KryoVex fork is maintained independently of that upstream snapshot.
+| Layer | KryoVex (this repo) |
+| --- | --- |
+| **Runtime** | **Node 20+**, **npm 10+** (`package.json` → `engines`), **Electron 37.x**, **React 19.x** |
+| **Main / preload** | **[tsup](https://tsup.egoist.dev/)** — ESM main (`.mjs`), CJS preload (`.cjs`); prod output in `release/app/dist/main` |
+| **Renderer** | **[Vite 7.x](https://vitejs.dev/)**, **Tailwind CSS v4**, **`eslint.config.mjs`**, **Jest** + **ts-jest** |
+| **Packaging** | **electron-builder** — Windows NSIS + portable; macOS DMG + ZIP; Linux `.deb` + AppImage; publish target **Credskiz/KryoVex** |
+| **Dev** | **`npm run dev`** → `scripts/dev-fast.mjs` (tsup watch + Vite + Electron) |
 
-**Versioning:** KryoVex **1.x** is a **new release series**. Version numbers are **not** a continuation of Casemove **2.x**.
-
-### What changed from the old project
-
-| Area | Casemove ([upstream](https://github.com/nombersDev/casemove)) | KryoVex (this repo) |
-| --- | --- | --- |
-| **Status** | Last release on upstream repo (see link above); not the active line for this codebase | Active development; releases on [Credskiz/KryoVex](https://github.com/Credskiz/KryoVex) |
-| **Runtime / stack** | Older Node / webpack-centric Electron React Boilerplate | **Node 20+**, **npm 10+**, **Electron 37.x**, **React 19.x** — **tsup** for **main + preload**, **Vite** for the **renderer** |
-| **UI** | Earlier Tailwind / layout | **Tailwind v4**, updated overview / inventory / trade-up views, KryoVex branding |
-| **Ship artifacts** | Prior installer set | **Windows:** NSIS installer + **portable** `.exe`; **macOS:** `.dmg` + `.zip` (x64 & arm64); **Linux:** `.deb` + **AppImage** |
-| **Updates** | Old repo / IDs | **electron-updater** + `package.json` → `build.publish` for **Credskiz/KryoVex** |
-| **Data paths** | Casemove-only layout | **KryoVex** paths with **migration** from legacy Casemove backup / store names where needed |
-
-### Build stack (what was replaced)
-
-The archived **Casemove** tree was built on **Electron React Boilerplate**–style tooling: **webpack** bundles for the main and renderer processes, renderer **dev DLL**, webpack-centric configs under `.erb`, and an older **Node** / **Tailwind v2** / **PostCSS** pipeline.
-
-**KryoVex** replaces that with a smaller, faster toolchain:
-
-| Layer | Before (typical Casemove / ERB) | Now (KryoVex) |
-| --- | --- | --- |
-| **Node / npm** | Old LTS (e.g. 14.x era in upstream docs) | **Node 20+** and **npm 10+** (`package.json` → `engines`) |
-| **Electron** | Older major | **Electron 37.x** |
-| **TypeScript** | Older 4.x stack | **TypeScript 5.9.x** (`npm run typecheck` → `tsc --noEmit`) |
-| **Electron main + preload** | Webpack | **[tsup](https://tsup.egoist.dev/)** — ESM **main** (`.mjs`), CJS **preload** (`.cjs`); large `node_modules` left external; **production** output in `release/app/dist/main` (**development** output in `dist/main`) |
-| **Renderer (React)** | Webpack + Babel-style chain | **[Vite 7.x](https://vitejs.dev/)** with `@vitejs/plugin-react`, `vite-tsconfig-paths`, `vite-plugin-html`, `vite-plugin-ejs` (see `vite.config.ts`) |
-| **CSS** | Tailwind 2 + PostCSS via webpack | **Tailwind CSS v4** with `@tailwindcss/postcss` |
-| **Lint** | Legacy `.eslintrc` | **ESLint 9** flat config (`eslint.config.mjs`) |
-| **Tests** | Jest (prior setup) | **Jest** 30.x with **`ts-jest`**, **`jsdom`** test environment (see `package.json` → `jest`) |
-| **Packaging** | electron-builder (older recipe) | **electron-builder 26.x** — Windows **x64** NSIS + **portable**; macOS **DMG** + **ZIP** (**x64** & **arm64**); Linux **`.deb`** + **AppImage**; `build.publish` → **GitHub** `Credskiz` / **`KryoVex`** |
-| **Dev loop** | Webpack dev server + main rebuild | **`npm run dev`** → **`scripts/dev-fast.mjs`** (initial tsup build, then scoped **`tsup --watch`**, **Vite** dev server, Electron via **`wait-electron-dev.mjs`**); **`npm run dev:watch`** → **concurrently** runs full-repo **`tsup --watch`** + **`vite`** |
-
-**Commands (this repo):** `npm run build` runs **`build:main`** (tsup) and **`build:renderer`** (vite) **in parallel** via `concurrently`. **`npm run package:compile`** (used by **`package:*`**) runs **`.erb/scripts/clean.js dist`** (deletes the root **`dist/`** directory only), then **`npm run build`**, then **`npm install --production`** in **`release/app`**; **`package:local`** and platform scripts then run **`electron-builder`** (see **How to build** below).
+`npm run build` runs **tsup** and **vite** in parallel. **`npm run package:compile`** cleans root `dist/`, builds, then `npm install --production` in `release/app` before **electron-builder**.
 
 ---
 
@@ -52,7 +28,7 @@ Installers and portable builds are published on [GitHub Releases](https://github
 
 ## Support
 
-Community Discord (historically used by Casemove users): https://discord.gg/4dSBdt4uJ3
+Community Discord: https://discord.gg/4dSBdt4uJ3
 
 ---
 
@@ -124,8 +100,6 @@ Run `npm run icon:sync` before packaging if you change `assets/kv-icon.png`.
 
 Cross-compiling (e.g. building `.dmg` on Windows) is not supported by default; use a macOS runner for Mac artifacts.
 
-Your local checkout folder may still be named `casemove`; the product and GitHub project are **KryoVex** (`Credskiz/KryoVex`).
-
 ---
 
 ## License and legal notices
@@ -136,9 +110,9 @@ KryoVex is **free software** under the **GNU General Public License v3.0 or late
 
 This program is distributed in the hope that it will be useful, but **without any warranty**; without even the implied warranty of **merchantability** or **fitness for a particular purpose**. See the GNU General Public License for more details.
 
-### Upstream lineage (Casemove)
+### Upstream
 
-KryoVex incorporates and modifies code originally distributed as **Casemove** ([nombersDev/casemove](https://github.com/nombersDev/casemove)) under **GPL-3.0**. You may obtain the corresponding source for KryoVex from this repository; you may inspect the historical Casemove source at the upstream repository linked above.
+KryoVex incorporates and modifies code originally distributed under **GPL-3.0**; you may inspect earlier published source at [nombersDev/casemove](https://github.com/nombersDev/casemove). Corresponding source for KryoVex is this repository.
 
 ### Third-party components
 

@@ -69,18 +69,8 @@ let currencyCodes = {
 
 const appDataBase = process.env.APPDATA || app.getPath('appData');
 const backupDir: string = path.join(appDataBase, 'kryovex/backup');
-const legacyPricingBackupDir = path.join(appDataBase, 'casemove/backup');
 if (!fs.existsSync(backupDir)) {
   fs.mkdirSync(backupDir, { recursive: true });
-}
-const pricesPathMigrated = path.join(backupDir, 'prices.json');
-const pricesPathLegacy = path.join(legacyPricingBackupDir, 'prices.json');
-if (!fs.existsSync(pricesPathMigrated) && fs.existsSync(pricesPathLegacy)) {
-  try {
-    fs.copyFileSync(pricesPathLegacy, pricesPathMigrated);
-  } catch {
-    /* ignore */
-  }
 }
 
 /** After this age, disk backup is stale → fetch from Steam (backup is still checked first). */

@@ -20,9 +20,7 @@ try {
 } catch {}
 
 const __tradeUpEnvDryRun = ['1', 'true', 'yes'].includes(
-  String(
-    process.env.KRYOVEX_TRADEUP_DRY_RUN || process.env.CASEMOVE_TRADEUP_DRY_RUN || ''
-  ).toLowerCase()
+  String(process.env.KRYOVEX_TRADEUP_DRY_RUN || '').toLowerCase()
 );
 
 // Map channel -> (original listener -> wrapped listener)

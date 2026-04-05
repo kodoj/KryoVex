@@ -15,8 +15,11 @@ export function RowProduct({ itemRow }) {
   let marketHashName = itemRow.item_name;
   if (itemRow.item_paint_wear != undefined) {
     marketHashName =
-    itemRow.item_name + ' (' + itemRow.item_wear_name + ')';
+      itemRow.item_name + ' (' + itemRow.item_wear_name + ')';
   }
+  const marketHref = `https://steamcommunity.com/market/listings/730/${encodeURIComponent(
+    marketHashName.replaceAll('Holo/Foil', 'Holo-Foil')
+  )}`;
 
   return (
     <>
@@ -29,12 +32,8 @@ export function RowProduct({ itemRow }) {
             )}
             aria-hidden="true"
           />
-          <Link
-            to={{
-              pathname: `https://steamcommunity.com/market/listings/730/${encodeURIComponent(
-                marketHashName.replaceAll('Holo/Foil', 'Holo-Foil')
-              )}`,
-            }}
+          <a
+            href={marketHref}
             target="_blank"
             rel="noopener noreferrer"
             className="shrink-0"
@@ -67,7 +66,7 @@ export function RowProduct({ itemRow }) {
                 }}
               />
             </div>
-          </Link>
+          </a>
 
           <span className="min-w-0">
             <span className="flex min-w-0 dark:text-zinc-100">

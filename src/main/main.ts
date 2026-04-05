@@ -780,25 +780,23 @@ async function startEvents(cs2: GlobalOffensive, user: SteamUser) {
   
   ipcMain.on('processTradeOrder', async (_event, idsToProcess, rarityToUse) => {
     const envDry = ['1', 'true', 'yes'].includes(
-      String(
-        process.env.KRYOVEX_TRADEUP_DRY_RUN || process.env.CASEMOVE_TRADEUP_DRY_RUN || ''
-      ).toLowerCase()
+      String(process.env.KRYOVEX_TRADEUP_DRY_RUN || '').toLowerCase()
     );
     const simulateOnly = (await getValue('tradeUpSimulateOnly')) !== false;
     if (envDry || simulateOnly) {
       log.info(
-        '[trade up] Skipped CS2 craft (simulate-only or KRYOVEX_TRADEUP_DRY_RUN / legacy CASEMOVE_TRADEUP_DRY_RUN). No items were consumed.'
+        '[trade up] Skipped CS2 craft (simulate-only or KRYOVEX_TRADEUP_DRY_RUN). No items were consumed.'
       );
       return;
     }
     // Extra safety in development: real crafts need an explicit opt-in (production unchanged).
     const isDev = process.env.NODE_ENV === 'development';
     const allowRealInDev = ['1', 'true', 'yes'].includes(
-      String(process.env.CASEMOVE_ALLOW_REAL_TRADEUP || '').toLowerCase()
+      String(process.env.KRYOVEX_ALLOW_REAL_TRADEUP || '').toLowerCase()
     );
     if (isDev && !allowRealInDev) {
       log.warn(
-        '[trade up] Development build: blocked real CS2 craft. Set CASEMOVE_ALLOW_REAL_TRADEUP=1 to test real trade-ups, or use a production build.'
+        '[trade up] Development build: blocked real CS2 craft. Set KRYOVEX_ALLOW_REAL_TRADEUP=1 to test real trade-ups, or use a production build.'
       );
       return;
     }

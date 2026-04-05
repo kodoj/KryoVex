@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { act, render } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import App from '../renderer/App.tsx';
 import { store } from '../renderer/store/configureStore.ts';
@@ -15,17 +15,12 @@ jest.mock('../renderer/components/content/shared/filters/inventoryFunctions.ts',
 }));
 
 describe('App', () => {
-  it('should render', async () => {
-    let result: ReturnType<typeof render> | undefined;
-    await act(async () => {
-      result = render(
-        <Provider store={store}>
-          <App />
-        </Provider>
-      );
-      // Flush pending microtasks from initial effects.
-      await Promise.resolve();
-    });
+  it('should render', () => {
+    const result = render(
+      <Provider store={store}>
+        <App />
+      </Provider>
+    );
     expect(result).toBeTruthy();
   });
 });

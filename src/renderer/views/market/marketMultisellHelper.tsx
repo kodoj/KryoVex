@@ -6,7 +6,15 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useSelector } from 'react-redux';
 import { classNames } from 'renderer/components/content/shared/filters/inventoryFunctions.ts';
 import {
@@ -26,6 +34,9 @@ import { selectSettings } from 'renderer/store/slices/settings.ts';
 const CS2_APP_ID = '730';
 const CS2_CONTEXT_ID = '2';
 const URL_LENGTH_WARN = 6500;
+/** Fixed row slot for market inventory picker virtualization (thumbnail + two text lines). */
+const PICKER_LIST_ROW_PX = 52;
+const PICKER_LIST_OVERSCAN = 8;
 
 type Line = { id: string; name: string; qty: number };
 
@@ -346,6 +357,48 @@ function MarketInventoryPickerDialog({
     });
   }, [inventoryRows, search, moveableOnly, mode]);
 
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  const listScrollRafRef = useRef<number | null>(null);
+  const [listScrollTop, setListScrollTop] = useState(0);
+  const [listViewportH, setListViewportH] = useState(400);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const el = listScrollRef.current;
+    if (!el) return;
+    const measure = () => setListViewportH(el.clientHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const el = listScrollRef.current;
+    if (el) el.scrollTop = 0;
+    setListScrollTop(0);
+  }, [open, mode]);
+
+  const onPickerListScroll = useCallback(() => {
+    if (listScrollRafRef.current != null) return;
+    listScrollRafRef.current = requestAnimationFrame(() => {
+      listScrollRafRef.current = null;
+      const el = listScrollRef.current;
+      if (el) setListScrollTop(el.scrollTop);
+    });
+  }, []);
+
+  const pickerListTotal = filteredRows.length;
+  const pickerStartIdx = Math.max(
+    0,
+    Math.floor(listScrollTop / PICKER_LIST_ROW_PX) - PICKER_LIST_OVERSCAN
+  );
+  const pickerEndIdx = Math.min(
+    pickerListTotal,
+    Math.ceil((listScrollTop + listViewportH) / PICKER_LIST_ROW_PX) + PICKER_LIST_OVERSCAN
+  );
+
   const toggleKey = (key: string) => {
     setSelectedKeys((prev) => {
       const next = new Set(prev);
@@ -465,23 +518,35 @@ function MarketInventoryPickerDialog({
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+              <div
+                ref={listScrollRef}
+                onScroll={onPickerListScroll}
+                className="min-h-0 flex-1 overflow-y-auto px-2 py-2"
+              >
                 {filteredRows.length === 0 ? (
                   <p className="px-2 py-8 text-center text-sm text-gray-500">Nothing matches these filters.</p>
                 ) : (
-                  <ul className="space-y-0.5">
-                    {filteredRows.map((r) => {
+                  <div
+                    className="relative"
+                    style={{ height: pickerListTotal * PICKER_LIST_ROW_PX }}
+                  >
+                    {filteredRows.slice(pickerStartIdx, pickerEndIdx).map((r, vi) => {
+                      const index = pickerStartIdx + vi;
                       const k = pickerRowKey(r);
                       const checked = selectedKeys.has(k);
                       const display = marketListingNameFromRow(r);
                       const qty = Math.max(1, Math.floor(Number(r.combined_QTY) || 1));
                       return (
-                        <li key={k}>
+                        <div
+                          key={k}
+                          className="absolute left-2 right-2"
+                          style={{ top: index * PICKER_LIST_ROW_PX, height: PICKER_LIST_ROW_PX }}
+                        >
                           <button
                             type="button"
                             onClick={() => toggleKey(k)}
                             className={classNames(
-                              'flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors',
+                              'flex h-full w-full items-center gap-2 rounded-lg border px-2 py-1 text-left transition-colors',
                               checked
                                 ? 'border-kryo-navy-600/70 bg-kryo-navy-950/40'
                                 : 'border-transparent bg-dark-level-two/40 hover:bg-dark-level-two/80'
@@ -510,10 +575,10 @@ function MarketInventoryPickerDialog({
                               {formatRowUnitPrice(r)}
                             </span>
                           </button>
-                        </li>
+                        </div>
                       );
                     })}
-                  </ul>
+                  </div>
                 )}
               </div>
 

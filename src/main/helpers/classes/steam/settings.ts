@@ -53,8 +53,7 @@ const schema: Schema<StoreSchema> = {
 
 const store = new Store({
   schema,
-  /** electron-store filename stem; unchanged so existing Casemove/KryoVex upgrades keep encrypted accounts. */
-  name: 'casemoveEnc',
+  name: 'kryovexEnc',
   watch: true,
   encryptionKey: 'this_only_obfuscates',
   migrations: {

@@ -7,7 +7,6 @@ import {
 import { useEffect, useState } from 'react';
 import QRCode from 'react-qr-code';
 import { useDispatch } from 'react-redux';
-import { Link } from 'react-router-dom';
 import { LoadingButton } from 'renderer/components/content/shared/animations.tsx';
 import { btnDefault, btnPrimary } from 'renderer/components/content/shared/buttonStyles.ts';
 import { classNames } from 'renderer/components/content/shared/filters/inventoryFunctions.ts';
@@ -529,11 +528,10 @@ export default function LoginForm({ isLock, autoLoginNonce, replaceLock, runDele
                       aria-hidden="true"
                     />
                   </button>
-                  <Link
-                    to={{
-                      pathname: `https://steamcommunity.com/chat/clientjstoken`,
-                    }}
+                  <a
+                    href="https://steamcommunity.com/chat/clientjstoken"
                     target="_blank"
+                    rel="noopener noreferrer"
                     className={classNames(
                       btnDefault,
                       'inline-flex shrink-0 items-center justify-center self-stretch rounded-none rounded-l-none border-0 border-l border-gray-300 px-3 dark:border-opacity-50'
@@ -543,7 +541,7 @@ export default function LoginForm({ isLock, autoLoginNonce, replaceLock, runDele
                       className="h-5 w-5 text-gray-400"
                       aria-hidden="true"
                     />
-                  </Link>
+                  </a>
                 </div>
               </div>
             ) : (
