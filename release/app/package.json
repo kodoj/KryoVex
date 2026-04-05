@@ -2,7 +2,7 @@
   "name": "kryovex",
   "productName": "KryoVex",
   "version": "1.0.1",
-  "description": "Counter-Strike 2 Storage unit manager that helps you move items in bulk without the clicking. ",
+  "description": "Counter-Strike 2 Storage unit manager that helps you move items in bulk without the clicking.",
   "type": "module",
   "author": {
     "name": "Credskiz"
