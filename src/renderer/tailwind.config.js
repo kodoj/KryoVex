@@ -3,6 +3,9 @@ export default {
   // Vite builds from `src/renderer` as root; keep globs relative to this folder.
   content: [
     './**/*.{html,js,jsx,ts,tsx}',
+    '!./**/*.{test,spec}.{ts,tsx}',
+    '!./**/__tests__/**',
+    '!./**/*.d.ts',
     '../shared/**/*.{js,jsx,ts,tsx}',
   ],
   darkMode: 'class',

@@ -14,7 +14,8 @@ import 'regenerator-runtime/runtime.js';
 import { CurrencyReturnValue } from '../shared/Interfaces-tsx/IPCReturn.tsx';
 import { LoginCommandReturnPackage } from '../shared/Interfaces-tsx/store.ts';
 import MenuBuilder from './menu.ts';
-import { resolveHtmlPath } from './util.ts';
+import { resolveHtmlPath, isUnpackagedDevSession } from './util.ts';
+import { installReactDevTools } from './helpers/installReactDevTools.ts';
 import { emitterAccount } from '../emitters.ts';
 import { flowLoginRegularQR } from './helpers/login/flowLoginRegularQR.tsx';
 
@@ -157,12 +158,9 @@ if (process.env.NODE_ENV === 'production' && !app.isPackaged) {
   }
 }
 
-const isDevelopment =
-  !app.isPackaged &&
-  (process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true');
-
-if (isDevelopment) {
-  (await import('electron-debug'));
+if (isUnpackagedDevSession()) {
+  const debug = (await import('electron-debug')).default;
+  debug({ showDevTools: false });
 }
 
 // const installExtensions = async () => {
@@ -228,8 +226,8 @@ const createWindow = async () => {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
-      webSecurity: isDevelopment ? false : true,
-      allowRunningInsecureContent: isDevelopment ? true : false,
+      webSecurity: isUnpackagedDevSession() ? false : true,
+      allowRunningInsecureContent: isUnpackagedDevSession() ? true : false,
       enableBlinkFeatures: '',
     },
   });
@@ -417,13 +415,10 @@ if (!gotTheLock) {
   app
     .whenReady()
     .then(async () => {
-      if (isDevelopment) {
-        const { default: installExtension, REACT_DEVELOPER_TOOLS } = require('electron-devtools-installer');  // FIXED: Use require for CJS compat
-        try {
-          await installExtension(REACT_DEVELOPER_TOOLS);
-        } catch (e) {
-          console.error('Failed to install DevTools extensions:', e);
-        }
+      if (isUnpackagedDevSession() && process.env.SKIP_REACT_DEVTOOLS !== '1') {
+        void installReactDevTools().catch((e) => {
+          console.error('Failed to install React DevTools:', e);
+        });
       }
       currentLocale = app.getLocale();
       console.log('Currentlocal', currentLocale);
@@ -778,10 +773,15 @@ async function startEvents(cs2: GlobalOffensive, user: SteamUser) {
   
   // Trade up handlers
   ipcMain.on('getTradeUpPossible', async (event, itemsToGet) => {
-    tradeUpClass.getPotentitalOutcome(itemsToGet).then((returnValue) => {
-      pricing.handleTradeUp(returnValue as ItemRow[]);
-      event.reply('getTradeUpPossible-reply', returnValue);
-    });
+    try {
+      const returnValue = await tradeUpClass.getPotentitalOutcome(itemsToGet);
+      const list = Array.isArray(returnValue) ? returnValue : [];
+      pricing.handleTradeUp(list as ItemRow[]);
+      event.reply('getTradeUpPossible-reply', list);
+    } catch (err) {
+      log.error('[trade up] getTradeUpPossible failed', err);
+      event.reply('getTradeUpPossible-reply', []);
+    }
   });
 
   ipcMain.on('getPrice', async (_event, items, options) => {
@@ -807,7 +807,7 @@ async function startEvents(cs2: GlobalOffensive, user: SteamUser) {
       return;
     }
     // Extra safety in development: real crafts need an explicit opt-in (production unchanged).
-    const isDev = isDevelopment;
+    const isDev = isUnpackagedDevSession();
     const allowRealInDev = ['1', 'true', 'yes'].includes(
       String(process.env.KRYOVEX_ALLOW_REAL_TRADEUP || '').toLowerCase()
     );
@@ -852,7 +852,7 @@ async function startEvents(cs2: GlobalOffensive, user: SteamUser) {
   function sendOrQueueUserEvent(message: any[]) {
     if (rendererReady && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('userEvents', message);
-      if (isDevelopment) {
+      if (isUnpackagedDevSession()) {
         console.log('Sent userEvents to renderer');
       }
     } else {

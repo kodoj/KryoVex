@@ -9,6 +9,7 @@ const initialState: Inventory = {
     totalAccountItems: 0,
     itemsLookUp: {},
     storageBulkLoadActive: false,
+    storageBulkLoadProgress: null,
 };
 
 

@@ -10,6 +10,7 @@ import {
 import { markImageError, useCs2Image } from 'renderer/hooks/useCs2Image.ts';
 import { pricingInventoryKey } from 'renderer/functionsClasses/prices.ts';
 import { selectInventory } from 'renderer/store/slices/inventory.ts';
+import { store } from 'renderer/store/configureStore.ts';
 import { selectTradeUp, tradeUpSetPossible } from 'renderer/store/slices/tradeUp.ts';
 import { selectPricing } from 'renderer/store/slices/pricing.ts';
 import { selectSettings } from 'renderer/store/slices/settings.ts';
@@ -116,11 +117,16 @@ export default function PossibleOutcomes() {
     }
     const key = tradeUpData.tradeUpProductsIDS.join('|');
     if (lastOutcomesKeyRef.current === key) return;
-    lastOutcomesKeyRef.current = key;
     window.electron.ipcRenderer
       .getPossibleOutcomes(tradeUpData.tradeUpProducts)
       .then((messageValue) => {
-        dispatch(tradeUpSetPossible(messageValue));
+        const latest = store.getState().tradeUp.tradeUpProductsIDS.join('|');
+        if (latest !== key) return;
+        dispatch(tradeUpSetPossible(Array.isArray(messageValue) ? messageValue : []));
+        lastOutcomesKeyRef.current = key;
+      })
+      .catch(() => {
+        lastOutcomesKeyRef.current = '';
       });
   }, [dispatch, tradeUpData.tradeUpProducts, tradeUpData.tradeUpProductsIDS]);
 

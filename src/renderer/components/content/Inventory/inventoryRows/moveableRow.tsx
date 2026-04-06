@@ -5,10 +5,7 @@ export function RowMoveable({itemRow, settingsData}) {
     return (
         <>
           {settingsData.columns.includes('Moveable') ? (
-                <td
-                  key={Math.random().toString(36).substr(2, 9)}
-                  className="hidden md:table-cell px-1 py-1 whitespace-nowrap text-center text-sm text-gray-500 dark:text-gray-400"
-                >
+                <td className="hidden md:table-cell px-1 py-1 whitespace-nowrap text-center text-sm text-gray-500 dark:text-gray-400">
                   <div className="flex justify-center">
                     {itemRow.item_moveable == true ? (
                       <span title="Item can be moved or traded">

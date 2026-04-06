@@ -85,6 +85,12 @@ class runItems {
   headers: any;
   prices: { [x: string]: any; };
   private queue!: InstanceType<typeof PQueue>;
+  /**
+   * `ipcMain.on('getPrice')` may invoke handlers concurrently when the renderer chunks requests.
+   * Overlapping `processPricing` calls share mutable cache/queue state and can emit partial IPC.
+   * Serialize here so each batch completes before the next starts.
+   */
+  private pricingDrain: Promise<void> = Promise.resolve();
 
   constructor(steamUser: SteamUser) {
     this.steamUser = steamUser;
@@ -143,6 +149,18 @@ class runItems {
     }
     // Steam priceoverview rate-limits aggressively; stay conservative (was 1500ms).
     this.queue = new PQueue({ concurrency: 1, interval: 2600, intervalCap: 1 });
+  }
+
+  private enqueueProcessPricing(
+    itemRows: ItemRow[],
+    options?: { sessionId?: string; forceFresh?: boolean }
+  ): Promise<void> {
+    this.pricingDrain = this.pricingDrain
+      .catch((err) => {
+        console.error('[pricing] Previous pricing batch failed:', err);
+      })
+      .then(() => this.processPricing(itemRows, options));
+    return this.pricingDrain;
   }
 
   async setPricing(pricingData, commandFrom) {
@@ -539,16 +557,12 @@ async processPricing(
           timestamp: pricing.timestamp,
           fromBackup: false,
         };
-      } else {
+      } else if (process.env.DEBUG_PRICING === 'true') {
         console.log(
           `Skipping backup update for ${itemNamePricing} due to invalid/0 value or backup usage`
         );
       }
-      await getValue('pricing').then((pricingStore) => {
-        const updated = { ...pricingStore ?? {}, cache: cachedPrices };
-        setValue('pricing', updated);
-      });
-      console.log('Promise resolved for item:', itemNamePricing, 'priced:', pricing);
+      // Avoid `electron-store` persistence per row — one flush after the queue drains (see below).
       const listing = pricing.steam_listing ?? 0;
       pricingFailMetaByName.set(itemNamePricing, { afterDeferredRetry });
       const failReason =
@@ -585,6 +599,12 @@ async processPricing(
       await Promise.all(
         retryThese.map((el) => this.queue.add(() => runQueuedFetch(el, true)))
       );
+    }
+
+    if (toQuery.length > 0) {
+      await getValue('pricing').then((pricingStore) => {
+        setValue('pricing', { ...(pricingStore ?? {}), cache: cachedPrices });
+      });
     }
 
     console.log('All pricing queue work resolved, emitting result');
@@ -639,14 +659,14 @@ async processPricing(
 }
 
   async handleItems(itemRows: ItemRow[], options?: { sessionId?: string; forceFresh?: boolean }) {
-    await this.processPricing(itemRows, {
+    await this.enqueueProcessPricing(itemRows, {
       sessionId: options?.sessionId,
       forceFresh: options?.forceFresh,
     });
   }
 
   async handleTradeUp(itemRows: ItemRow[]) {
-    await this.processPricing(itemRows);
+    await this.enqueueProcessPricing(itemRows, undefined);
   }
 }
 

@@ -210,53 +210,63 @@ function content() {
     settingsData?.source?.title,
   ]);
 
-  let finalInventoryToUse = [...sortedRows];
+  const finalInventoryToUse = useMemo(() => {
+    let rows = sortedRows.filter(function (item) {
+      if (!item.tradeUpConfirmed) {
+        return false;
+      }
+      if (
+        tradeUpData.MinFloat > (item.item_paint_wear ?? 0) ||
+        tradeUpData.MaxFloat < (item.item_paint_wear ?? 0)
+      ) {
+        return false;
+      }
+      if (tradeUpData.tradeUpProductsIDS.includes(item.item_id)) {
+        return false;
+      }
+      if (
+        tradeUpData.collections.length > 0 &&
+        !tradeUpData.collections.includes(item?.collection)
+      ) {
+        return false;
+      }
+      if (tradeUpData.options.includes('Hide equipped')) {
+        if (item.equipped_t || item.equipped_ct) {
+          return false;
+        }
+      }
+      if (tradeUpData.tradeUpProducts.length != 0) {
+        let restrictRarity = tradeUpData.tradeUpProducts[0].rarityName;
+        let restrictStattrak = tradeUpData.tradeUpProducts[0].stattrak;
+        if (item.rarityName != restrictRarity) {
+          return false;
+        }
+        if (item.stattrak != restrictStattrak) {
+          return false;
+        }
+      }
 
-  finalInventoryToUse = finalInventoryToUse.filter(function (item) {
-    if (!item.tradeUpConfirmed) {
-      return false;
-    }
-    if (
-      tradeUpData.MinFloat > (item.item_paint_wear ?? 0) ||
-      tradeUpData.MaxFloat < (item.item_paint_wear ?? 0)
-    ) {
-      return false;
-    }
-    if (tradeUpData.tradeUpProductsIDS.includes(item.item_id)) {
-      return false;
-    }
-    if (
-      tradeUpData.collections.length > 0 &&
-      !tradeUpData.collections.includes(item?.collection)
-    ) {
-      return false;
-    }
-    if (tradeUpData.options.includes('Hide equipped')) {
-      if (item.equipped_t || item.equipped_ct) {
-        return false;
+      if (item.tradeUp) {
+        return true;
       }
+      return false;
+    });
+    if (inventoryFilters.sortBack) {
+      rows = [...rows].reverse();
     }
-    if (tradeUpData.tradeUpProducts.length != 0) {
-      let restrictRarity = tradeUpData.tradeUpProducts[0].rarityName;
-      let restrictStattrak = tradeUpData.tradeUpProducts[0].stattrak;
-      if (item.rarityName != restrictRarity) {
-        return false;
-      }
-      if (item.stattrak != restrictStattrak) {
-        return false;
-      }
-    }
-
-    if (item.tradeUp) {
-      return true;
-    }
-    return false;
-  });
+    return rows;
+  }, [
+    sortedRows,
+    inventoryFilters.sortBack,
+    tradeUpData.MinFloat,
+    tradeUpData.MaxFloat,
+    tradeUpData.tradeUpProductsIDS,
+    tradeUpData.collections,
+    tradeUpData.options,
+    tradeUpData.tradeUpProducts,
+  ]);
 
   const isFull = tradeUpData.tradeUpProducts.length == 10;
-  if (inventoryFilters.sortBack) {
-    finalInventoryToUse.reverse();
-  }
 
   useLayoutEffect(() => {
     if (didAutoFitRef.current) return;

@@ -3,12 +3,24 @@ import { ItemRow, ItemRowStorage } from "renderer/interfaces/items.ts";
 import { filterItemRows } from "renderer/functionsClasses/filters/custom.ts";
 import { sortDataFunction } from "renderer/components/content/shared/filters/inventoryFunctions.ts";
 import { setFilteredStorage } from "renderer/store/slices/inventoryFilters.ts";
-import { setStorageBulkLoadActive } from "renderer/store/slices/inventory.ts";
+import {
+  addStorageUnitsItemsBulk,
+  setStorageBulkLoadActive,
+  setStorageBulkLoadProgress,
+} from "renderer/store/slices/inventory.ts";
+import { moveFromAppendCaskets } from "renderer/store/slices/moveFrom.ts";
 import { store } from "renderer/store/configureStore.ts";
 import {
   HandleStorageData,
   type HandleStorageDeps,
 } from "./storageUnitsClass.tsx";
+
+/**
+ * How many caskets to merge per `addStorageUnitsItemsBulk` dispatch.
+ * Higher = fewer full-array scans (faster) but storage row counts jump in bigger steps.
+ * `storageBulkLoadProgress` still updates every casket so Overview can show smooth status + spinners.
+ */
+const STORAGE_BULK_FLUSH_STRIDE = 3;
 
 function sorting(valueOne: string | number, valueTwo: string | number) {
   if (valueOne < valueTwo) {
@@ -63,14 +75,46 @@ export async function getAllStorages(
     dispatch(setStorageBulkLoadActive(true));
     try {
       const alreadyActive = new Set(moveFrom.activeStorages);
+      const toLoadQueue = returnValue.filter((p) => !alreadyActive.has(p.item_id));
+      const totalPlan = toLoadQueue.length;
+      if (totalPlan > 0) {
+        dispatch(setStorageBulkLoadProgress({ done: 0, total: totalPlan }));
+      }
+
       const StorageClass = new HandleStorageData(dispatch, {
         ...deps,
         deferFilteredStorage: true,
       });
-      for (const project of returnValue) {
-        if (alreadyActive.has(project.item_id)) continue;
-        await StorageClass.addStorage(project as ItemRowStorage, []);
+      const pendingFlush: Array<{
+        casketID: string;
+        storageData: ItemRowStorage[];
+        storageRowsRaw: ItemRowStorage[];
+      }> = [];
+
+      const flushPending = () => {
+        if (pendingFlush.length === 0) return;
+        dispatch(moveFromAppendCaskets({ casketIDs: pendingFlush.map((b) => b.casketID) }));
+        dispatch(addStorageUnitsItemsBulk([...pendingFlush]));
+        pendingFlush.length = 0;
+      };
+
+      let done = 0;
+      for (const project of toLoadQueue) {
+        const result = await StorageClass.loadStoragePayload(project as ItemRow, true);
+        done += 1;
+        dispatch(setStorageBulkLoadProgress({ done, total: totalPlan }));
+        pendingFlush.push({
+          casketID: project.item_id,
+          storageData: result.combinedStorages,
+          storageRowsRaw: result.rawStorages,
+        });
+        if (pendingFlush.length >= STORAGE_BULK_FLUSH_STRIDE) {
+          flushPending();
+          await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        }
       }
+      flushPending();
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
       const st = store.getState();
       const merged = st.inventory.storageInventory;
       let filteredStorage = await filterItemRows(merged as any, st.inventoryFilters.storageFilter);

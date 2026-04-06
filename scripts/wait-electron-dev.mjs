@@ -8,7 +8,8 @@ const MAIN_PATH = path.join(ROOT, 'dist', 'main', 'main.mjs');
 const PRELOAD_PATH = path.join(ROOT, 'dist', 'main', 'preload.cjs');
 
 const START_TIMEOUT_MS = 120_000;
-const POLL_MS = 250;
+/** Tighter polling wakes Electron sooner after Vite/dist are ready (slightly more CPU during the wait only). */
+const POLL_MS = 120;
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -137,7 +138,7 @@ async function main() {
   const child = spawn(process.execPath, [electronmonCli, 'dist/main/main.mjs'], {
     stdio: 'inherit',
     cwd: ROOT,
-    env: process.env,
+    env: { ...process.env, ELECTRON_IS_DEV: process.env.ELECTRON_IS_DEV || '1' },
   });
   child.on('exit', (code) => process.exit(code ?? 0));
 }

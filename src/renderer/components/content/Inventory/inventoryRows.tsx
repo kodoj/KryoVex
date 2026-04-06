@@ -1,5 +1,5 @@
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { searchFilter } from 'renderer/functionsClasses/filters/search.ts';
 import { RequestPrices } from 'renderer/functionsClasses/prices.ts';
@@ -39,6 +39,34 @@ import { selectPricing } from 'renderer/store/slices/pricing.ts';
 import { selectSettings } from 'renderer/store/slices/settings.ts';
 import { selectAuth } from 'renderer/store/slices/auth.ts';
 
+type InvTableRowProps = {
+  projectRow: any;
+  settingsData: any;
+  pricesResult: any;
+  usrDetails: any;
+};
+
+const InventoryTableRow = memo(function InventoryTableRow({
+  projectRow,
+  settingsData,
+  pricesResult,
+  usrDetails,
+}: InvTableRowProps) {
+  return (
+    <tr className={overviewTrClassName}>
+      <RowProduct itemRow={projectRow} />
+      <RowCollections itemRow={projectRow} settingsData={settingsData} />
+      <RowPrice itemRow={projectRow} settingsData={settingsData} pricesReducer={pricesResult} />
+      <RowStickersPatches itemRow={projectRow} settingsData={settingsData} />
+      <RowFloat itemRow={projectRow} settingsData={settingsData} />
+      <RowRarity itemRow={projectRow} settingsData={settingsData} />
+      <RowQTY itemRow={projectRow} />
+      <RowMoveable itemRow={projectRow} settingsData={settingsData} />
+      <RowLinkInventory itemRow={projectRow} settingsData={settingsData} userDetails={usrDetails} />
+      <RowTradehold itemRow={projectRow} settingsData={settingsData} />
+    </tr>
+  );
+});
 
 function content() {
   const [getInventory, setInventory] = useState([] as any);
@@ -320,22 +348,13 @@ function content() {
         </thead>
         <tbody className={overviewTbodyClassName}>
           {visibleRows.map((projectRow) => (
-            <tr
+            <InventoryTableRow
               key={projectRow.item_id}
-              className={overviewTrClassName}
-            >
-
-              <RowProduct itemRow={projectRow}  />
-              <RowCollections itemRow={projectRow} settingsData={settingsData} />
-              <RowPrice itemRow={projectRow} settingsData={settingsData} pricesReducer={pricesResult} />
-              <RowStickersPatches itemRow={projectRow} settingsData={settingsData} />
-              <RowFloat itemRow={projectRow} settingsData={settingsData} />
-              <RowRarity itemRow={projectRow} settingsData={settingsData} />
-              <RowQTY itemRow={projectRow} />
-              <RowMoveable itemRow={projectRow} settingsData={settingsData} />
-              <RowLinkInventory itemRow={projectRow} settingsData={settingsData} userDetails={usrDetails}/>
-              <RowTradehold itemRow={projectRow} settingsData={settingsData} />
-            </tr>
+              projectRow={projectRow}
+              settingsData={settingsData}
+              pricesResult={pricesResult}
+              usrDetails={usrDetails}
+            />
           ))}
         </tbody>
         </table>

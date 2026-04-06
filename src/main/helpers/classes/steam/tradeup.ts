@@ -89,73 +89,88 @@ class tradeUps {
   // Generate outcome
   getPotentitalOutcome(arrayOfItems) {
     return new Promise((resolve) => {
-      // if (arrayOfItems.length != 10) {
-      //   resolve(false);
-      // }
-      let finalResult = [];
-      let average = 0;
-      let possibleSkins = [];
-      let seenSkins = [];
-      let isStattrak = false;
-      // Check if stattrak
-      if (arrayOfItems[0].item_name.includes('StatTrak™')) {
-        isStattrak = true;
-      }
-
-      arrayOfItems.forEach((element) => {
-        if (isStattrak) {
-          element.item_name = element.item_name.replace('StatTrak™ ', '');
+      try {
+        if (!Array.isArray(arrayOfItems) || arrayOfItems.length === 0) {
+          resolve([]);
+          return;
         }
-        let collection = this.directory[element.item_name];
-        let possible = this.getPossible(
-          collection,
-          parseInt(this.collections[collection][element.item_name].best_quality)
-        );
-        possible.forEach((element) => {
-          if (!seenSkins.includes(element)) {
-            seenSkins.push(element);
+
+        const finalResult: any[] = [];
+        let average = 0;
+        const possibleSkins: string[] = [];
+        const seenSkins: string[] = [];
+        const firstName = String(arrayOfItems[0]?.item_name ?? '');
+        const isStattrak = firstName.includes('StatTrak™');
+
+        for (const element of arrayOfItems) {
+          let itemName = String(element?.item_name ?? '');
+          if (isStattrak) {
+            itemName = itemName.replace('StatTrak™ ', '');
           }
-        });
-        possibleSkins.push(...possible);
-        average += element.item_paint_wear;
-      });
+          const collection = (this.directory as Record<string, string>)[itemName];
+          const collObj =
+            collection != null ? (this.collections as Record<string, Record<string, any>>)[collection] : undefined;
+          const itemEntry = collObj?.[itemName] as { best_quality?: string | number } | undefined;
+          if (collection == null || itemEntry?.best_quality == null) {
+            console.warn('[tradeUp] Item not in collections backup, skipping outcomes:', itemName);
+            resolve([]);
+            return;
+          }
 
-      average = average / arrayOfItems.length;
-
-      seenSkins.forEach((element) => {
-        let relevantObject = this.collections[this.directory[element]][element];
-        let skinRarity = this.getRarity(
-          relevantObject['min-wear'],
-          relevantObject['max-wear'],
-          average
-        );
-        let floatChance = skinRarity[1]
-        // @ts-ignore
-        skinRarity = skinRarity[0]
-        // @ts-ignore
-        let percentageChance =
-          100 /
-          (possibleSkins.length /
-            possibleSkins.filter(function (item) {
-              return item == element;
-            }).length);
-
-        let item_name = element as any;
-        if (isStattrak) {
-          item_name = 'StatTrak™ ' + item_name;
+          const possible = this.getPossible(collection, parseInt(String(itemEntry.best_quality), 10));
+          for (const skin of possible) {
+            if (!seenSkins.includes(skin)) {
+              seenSkins.push(skin);
+            }
+          }
+          possibleSkins.push(...possible);
+          average += Number(element?.item_paint_wear) || 0;
         }
-        let objectToWrite = {
-          item_name: item_name,
-          item_wear_name: skinRarity,
-          percentage: percentageChance.toFixed(2),
-          image: relevantObject['imageURL'],
-          float_chance: floatChance
-        };
-        // @ts-ignore
-        finalResult.push(objectToWrite);
-      });
 
-      resolve(finalResult);
+        average = average / arrayOfItems.length;
+
+        if (seenSkins.length === 0 || possibleSkins.length === 0) {
+          resolve([]);
+          return;
+        }
+
+        for (const skinName of seenSkins) {
+          const coll = (this.directory as Record<string, string>)[skinName];
+          const relevantObject =
+            coll != null ? (this.collections as Record<string, Record<string, any>>)[coll]?.[skinName] : null;
+          if (!relevantObject) continue;
+
+          const matchCount = possibleSkins.filter((item) => item === skinName).length;
+          if (matchCount === 0) continue;
+
+          const skinRarity = this.getRarity(
+            relevantObject['min-wear'],
+            relevantObject['max-wear'],
+            average
+          );
+          let floatChance = skinRarity[1];
+          // @ts-ignore
+          const wearLabel = skinRarity[0];
+          const percentageChance = 100 / (possibleSkins.length / matchCount);
+
+          let item_name: any = skinName;
+          if (isStattrak) {
+            item_name = 'StatTrak™ ' + skinName;
+          }
+          finalResult.push({
+            item_name,
+            item_wear_name: wearLabel,
+            percentage: percentageChance.toFixed(2),
+            image: relevantObject['imageURL'],
+            float_chance: floatChance,
+          });
+        }
+
+        resolve(finalResult);
+      } catch (e) {
+        console.error('[tradeUp] getPotentitalOutcome failed:', e);
+        resolve([]);
+      }
     });
   }
 }

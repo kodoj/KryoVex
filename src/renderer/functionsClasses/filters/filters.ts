@@ -7,7 +7,7 @@ import {
   FiltersRequirement,
 } from 'renderer/interfaces/filters.ts';
 import { ItemRow } from 'renderer/interfaces/items.ts';
-import * as _ from 'lodash';
+import { some as lodashSome } from 'lodash';
 
 export class FilterManager {
   filters: Filters = {};
@@ -35,7 +35,7 @@ export class FilterManager {
   ): void {
     let arrayToAdd: Array<Filter> = [];
     filterObjects.forEach((element) => {
-      if (!_.some(this.filters?.[keyToAddUnder], element)) {
+      if (!lodashSome(this.filters?.[keyToAddUnder], element)) {
         let finalFilter: Filter = {
           ...element,
           include: includeFilter,

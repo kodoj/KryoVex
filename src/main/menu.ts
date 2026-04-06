@@ -5,17 +5,11 @@ import {
   BrowserWindow,
   MenuItemConstructorOptions,
 } from 'electron';
+import { isUnpackagedDevSession } from './util.ts';
 
 interface DarwinMenuItemConstructorOptions extends MenuItemConstructorOptions {
   selector?: string;
   submenu?: DarwinMenuItemConstructorOptions[] | Menu;
-}
-
-function isDevMenu(): boolean {
-  return (
-    !app.isPackaged &&
-    (process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true')
-  );
 }
 
 export default class MenuBuilder {
@@ -26,7 +20,7 @@ export default class MenuBuilder {
   }
 
   buildMenu(): Menu {
-    if (isDevMenu()) {
+    if (isUnpackagedDevSession()) {
       this.setupDevelopmentEnvironment();
     }
 
@@ -190,7 +184,7 @@ export default class MenuBuilder {
     subMenuHelp;
     subMenuWindow;
 
-    const subMenuView = isDevMenu() ? subMenuViewDev : subMenuViewProd;
+    const subMenuView = isUnpackagedDevSession() ? subMenuViewDev : subMenuViewProd;
 
     return [subMenuAbout, subMenuEdit, subMenuView];
   }
@@ -215,7 +209,7 @@ export default class MenuBuilder {
       },
       {
         label: '&View',
-        submenu: isDevMenu()
+        submenu: isUnpackagedDevSession()
             ? [
                 {
                   label: '&Reload',

@@ -5,10 +5,7 @@ export function RowLinkInventory({ itemRow, settingsData, userDetails }) {
   return (
     <>
       {settingsData.columns.includes('Inventory link') ? (
-        <td
-          key={Math.random().toString(36).substr(2, 9)}
-          className="hidden md:table-cell px-6 py-3 whitespace-nowrap text-center text-sm text-gray-500 hover:text-gray-200"
-        >
+        <td className="hidden md:table-cell px-6 py-3 whitespace-nowrap text-center text-sm text-gray-500 hover:text-gray-200">
           <div className="flex justify-center rounded-full drop-shadow-lg">
             <a href={invHref} target="_blank" rel="noopener noreferrer">
               <ArrowTopRightOnSquareIcon

@@ -1,11 +1,10 @@
-import { useDispatch, useSelector } from "react-redux";
-import { selectSettings, setColumnWidths } from "renderer/store/slices/settings.ts";
+import { createSelector } from "@reduxjs/toolkit";
+import { useDispatch, useSelector, shallowEqual } from "react-redux";
+import { setColumnWidths } from "renderer/store/slices/settings.ts";
 import { setSort as setInventorySort } from "renderer/store/slices/inventoryFilters.ts";
-import { setSort as setMoveFromSort, selectMoveFrom } from "renderer/store/slices/moveFrom.ts";
-import { setSort as setMoveToSort, selectMoveTo } from "renderer/store/slices/moveTo.ts";
-import { selectPricing } from "renderer/store/slices/pricing.ts";
-import { selectInventory } from "renderer/store/slices/inventory.ts";
-import { selectInventoryFilters } from "renderer/store/slices/inventoryFilters.ts";
+import { setSort as setMoveFromSort } from "renderer/store/slices/moveFrom.ts";
+import { setSort as setMoveToSort } from "renderer/store/slices/moveTo.ts";
+import type { RootState } from "renderer/store/rootReducer.ts";
 import { inventorySetSortStorage } from "renderer/store/inventory/inventoryActions.tsx";
 import { focusRingBtn } from "../../shared/buttonStyles.ts";
 import { sortDataFunction } from "../../shared/filters/inventoryFunctions.ts";
@@ -24,17 +23,35 @@ function sortActionFor(target: SortTarget) {
   }
 }
 
+/** Inputs for storage re-sort when a column header is clicked (memoized; avoids 4 separate subscriptions per cell). */
+const selectHeaderStorageSortInputs = createSelector(
+  [
+    (s: RootState) => s.inventory.storageInventory,
+    (s: RootState) => s.inventoryFilters.storageFiltered,
+    (s: RootState) => s.pricing.prices,
+    (s: RootState) => s.settings.source?.title,
+  ],
+  (storageInventory, storageFiltered, prices, sourceTitle) => ({
+    storageInventory,
+    storageFiltered,
+    prices,
+    sourceTitle,
+  })
+);
+
 function useTableSortState(sortTarget: SortTarget) {
-  const inv = useSelector(selectInventoryFilters);
-  const mf = useSelector(selectMoveFrom);
-  const mt = useSelector(selectMoveTo);
-  if (sortTarget === 'moveFrom') {
-    return { sortValue: mf.sortValue, sortBack: mf.sortBack };
-  }
-  if (sortTarget === 'moveTo') {
-    return { sortValue: mt.sortValue, sortBack: mt.sortBack };
-  }
-  return { sortValue: inv.sortValue, sortBack: inv.sortBack };
+  return useSelector(
+    (s: RootState) => {
+      if (sortTarget === 'moveFrom') {
+        return { sortValue: s.moveFrom.sortValue, sortBack: s.moveFrom.sortBack };
+      }
+      if (sortTarget === 'moveTo') {
+        return { sortValue: s.moveTo.sortValue, sortBack: s.moveTo.sortBack };
+      }
+      return { sortValue: s.inventoryFilters.sortValue, sortBack: s.inventoryFilters.sortBack };
+    },
+    shallowEqual
+  );
 }
 
 let __lastFitClickAt = 0;
@@ -630,10 +647,7 @@ export function RowHeader({
   thClassName?: string;
 }) {
     const dispatch = useDispatch();
-    const pricing = useSelector(selectPricing);
-    const settings = useSelector(selectSettings);
-    const inventory = useSelector(selectInventory);
-    const inventoryFilters = useSelector(selectInventoryFilters);
+    const sortInputs = useSelector(selectHeaderStorageSortInputs);
     const { sortValue, sortBack } = useTableSortState(sortTarget);
     const sortActive = sortValue === sortName;
     const ascending = !sortBack;
@@ -642,15 +656,15 @@ export function RowHeader({
       dispatch(sortActionFor(sortTarget)({ sortValue: sortName }));
       const storageResult = await sortDataFunction(
         sortName,
-        inventory.storageInventory,
-        pricing.prices,
-        settings?.source?.title
+        sortInputs.storageInventory,
+        sortInputs.prices,
+        sortInputs.sourceTitle
       );
       const storageResultFiltered = await sortDataFunction(
         sortName,
-        inventoryFilters.storageFiltered,
-        pricing.prices,
-        settings?.source?.title
+        sortInputs.storageFiltered,
+        sortInputs.prices,
+        sortInputs.sourceTitle
       );
       dispatch(inventorySetSortStorage(storageResult, storageResultFiltered));
     };
@@ -705,10 +719,7 @@ export function RowHeader({
 // Row header with sort option
 export function RowHeaderHiddenXL({ headerName, sortName }) {
     const dispatch = useDispatch();
-    const pricing = useSelector(selectPricing);
-    const settings = useSelector(selectSettings);
-    const inventory = useSelector(selectInventory);
-    const inventoryFilters = useSelector(selectInventoryFilters);
+    const sortInputs = useSelector(selectHeaderStorageSortInputs);
     const { sortValue, sortBack } = useTableSortState('inventory');
     const sortActive = sortValue === sortName;
     const ascending = !sortBack;
@@ -717,15 +728,15 @@ export function RowHeaderHiddenXL({ headerName, sortName }) {
       dispatch(sortActionFor('inventory')({ sortValue: sortName }));
       const storageResult = await sortDataFunction(
         sortName,
-        inventory.storageInventory,
-        pricing.prices,
-        settings?.source?.title
+        sortInputs.storageInventory,
+        sortInputs.prices,
+        sortInputs.sourceTitle
       );
       const storageResultFiltered = await sortDataFunction(
         sortName,
-        inventoryFilters.storageFiltered,
-        pricing.prices,
-        settings?.source?.title
+        sortInputs.storageFiltered,
+        sortInputs.prices,
+        sortInputs.sourceTitle
       );
       dispatch(inventorySetSortStorage(storageResult, storageResultFiltered));
     };
@@ -796,10 +807,8 @@ export function RowHeaderCondition({
   forceVisible?: boolean;
 }) {
     const dispatch = useDispatch();
-    const settings = useSelector(selectSettings);
-    const pricing = useSelector(selectPricing);
-    const inventory = useSelector(selectInventory);
-    const inventoryFilters = useSelector(selectInventoryFilters);
+    const settingsColumns = useSelector((s: RootState) => s.settings.columns);
+    const sortInputs = useSelector(selectHeaderStorageSortInputs);
     const { sortValue, sortBack } = useTableSortState(sortTarget);
     const sortActive = sortValue === sortName;
     const ascending = !sortBack;
@@ -808,15 +817,15 @@ export function RowHeaderCondition({
       dispatch(sortActionFor(sortTarget)({ sortValue: sortName }));
       const storageResult = await sortDataFunction(
         sortName,
-        inventory.storageInventory,
-        pricing.prices,
-        settings?.source?.title
+        sortInputs.storageInventory,
+        sortInputs.prices,
+        sortInputs.sourceTitle
       );
       const storageResultFiltered = await sortDataFunction(
         sortName,
-        inventoryFilters.storageFiltered,
-        pricing.prices,
-        settings?.source?.title
+        sortInputs.storageFiltered,
+        sortInputs.prices,
+        sortInputs.sourceTitle
       );
       dispatch(inventorySetSortStorage(storageResult, storageResultFiltered));
     };
@@ -824,7 +833,7 @@ export function RowHeaderCondition({
     const vis = [visibilityClass ?? headerVisibilityClass(condition), align, thClassName].filter(Boolean).join(' ');
     return (
         <>
-            {(forceVisible || settings.columns.includes(condition)) ?
+            {(forceVisible || settingsColumns.includes(condition)) ?
                 <th
                   className={thBase(vis)}
                   data-colkey={sortName}
@@ -872,10 +881,10 @@ export function RowHeaderCondition({
 
 // Row header sort and condition
 export function RowHeaderConditionNoSort({ headerName, condition }) {
-    const settings = useSelector(selectSettings);
+    const settingsColumns = useSelector((s: RootState) => s.settings.columns);
     return (
         <>
-            {settings.columns.includes(condition) ?
+            {settingsColumns.includes(condition) ?
                 <RowHeaderPlainKey colKey={condition} label={headerName} />
                 : ''}
         </>

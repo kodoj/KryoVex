@@ -8,7 +8,9 @@ import {
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import {
   Fragment,
+  memo,
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -213,7 +215,7 @@ function buildItemUrlLookup(rowsList: (ItemRow[] | undefined)[]): Map<string, st
   return map;
 }
 
-function LineThumb({ srcKey }: { srcKey: string }) {
+const LineThumb = memo(function LineThumb({ srcKey }: { srcKey: string }) {
   const src = useCs2Image(srcKey, { fallback: IMAGE_FALLBACK_DATA_URI });
   return (
     <div
@@ -233,7 +235,7 @@ function LineThumb({ srcKey }: { srcKey: string }) {
       />
     </div>
   );
-}
+});
 
 /**
  * Steam expects literal query keys `items[]` / `qty[]`. URLSearchParams encodes `[` `]` as
@@ -270,6 +272,71 @@ function pickerRowKey(r: ItemRow): string {
 
 function pickerSourceLabel(r: ItemRow): string {
   return r.storage_id ? 'Storage' : 'Backpack';
+}
+
+type PickerSortKey = 'name' | 'qty' | 'source' | 'price';
+
+function comparePickerItemRows(
+  a: ItemRow,
+  b: ItemRow,
+  key: PickerSortKey,
+  unitPriceNum: (r: ItemRow) => number
+): number {
+  switch (key) {
+    case 'name':
+      return marketListingNameFromRow(a).localeCompare(marketListingNameFromRow(b), undefined, {
+        sensitivity: 'base',
+      });
+    case 'qty': {
+      const qa = Math.max(1, Math.floor(Number(a.combined_QTY) || 1));
+      const qb = Math.max(1, Math.floor(Number(b.combined_QTY) || 1));
+      return qa - qb;
+    }
+    case 'source': {
+      const sa = a.storage_id ? 1 : 0;
+      const sb = b.storage_id ? 1 : 0;
+      if (sa !== sb) return sa - sb;
+      const ida = a.storage_id != null ? String(a.storage_id) : '';
+      const idb = b.storage_id != null ? String(b.storage_id) : '';
+      return ida.localeCompare(idb);
+    }
+    case 'price':
+      return unitPriceNum(a) - unitPriceNum(b);
+    default:
+      return 0;
+  }
+}
+
+function PickerSortHeaderBtn({
+  label,
+  sortKey,
+  current,
+  onSort,
+  align = 'left',
+}: {
+  label: string;
+  sortKey: PickerSortKey;
+  current: { key: PickerSortKey; asc: boolean };
+  onSort: (k: PickerSortKey) => void;
+  align?: 'left' | 'right';
+}) {
+  const active = current.key === sortKey;
+  return (
+    <button
+      type="button"
+      className={classNames(
+        focusRingBtn,
+        'inline-flex max-w-full items-center gap-0.5 rounded px-0.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+        align === 'right' ? 'ml-auto' : '',
+        active ? 'text-cyan-300/95' : 'text-gray-500 hover:text-gray-300'
+      )}
+      onClick={() => onSort(sortKey)}
+      aria-sort={active ? (current.asc ? 'ascending' : 'descending') : 'none'}
+    >
+      <span className="truncate">{label}</span>
+      <SortIndicator active={active} ascending={current.asc} className="h-3 w-3 shrink-0 opacity-90" />
+    </button>
+  );
 }
 
 function mergeCommodityLines(prev: Line[], additions: { name: string; qty: number }[]): Line[] {
@@ -314,6 +381,7 @@ function MarketInventoryPickerDialog({
   inventoryRows,
   itemUrlByName,
   formatRowUnitPrice,
+  getRowUnitPriceNum,
   onConfirm,
 }: {
   open: boolean;
@@ -322,19 +390,19 @@ function MarketInventoryPickerDialog({
   inventoryRows: ItemRow[];
   itemUrlByName: Map<string, string>;
   formatRowUnitPrice: (r: ItemRow) => string;
+  getRowUnitPriceNum: (r: ItemRow) => number;
   onConfirm: (selected: ItemRow[]) => void;
 }) {
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const headerSelectAllRef = useRef<HTMLInputElement>(null);
   const [moveableOnly, setMoveableOnly] = useState(true);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
-
-  useEffect(() => {
-    if (open) {
-      setSearch('');
-      setMoveableOnly(true);
-      setSelectedKeys(new Set());
-    }
-  }, [open, mode]);
+  const [pickerSort, setPickerSort] = useState<{ key: PickerSortKey; asc: boolean }>({
+    key: 'name',
+    asc: true,
+  });
 
   const thumbFor = useCallback(
     (name: string) => {
@@ -345,7 +413,7 @@ function MarketInventoryPickerDialog({
   );
 
   const filteredRows = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     return inventoryRows.filter((r) => {
       if (moveableOnly && r.item_moveable !== true) return false;
       const comm = isSteamMultisellCommodityRow(r);
@@ -355,7 +423,21 @@ function MarketInventoryPickerDialog({
       const display = marketListingNameFromRow(r).toLowerCase();
       return display.includes(q) || r.item_name.toLowerCase().includes(q);
     });
-  }, [inventoryRows, search, moveableOnly, mode]);
+  }, [inventoryRows, deferredSearch, moveableOnly, mode]);
+
+  const sortedFilteredRows = useMemo(() => {
+    const rows = [...filteredRows];
+    rows.sort((a, b) => {
+      const c = comparePickerItemRows(a, b, pickerSort.key, getRowUnitPriceNum);
+      if (c !== 0) return pickerSort.asc ? c : -c;
+      return pickerRowKey(a).localeCompare(pickerRowKey(b));
+    });
+    return rows;
+  }, [filteredRows, pickerSort, getRowUnitPriceNum]);
+
+  const togglePickerSort = useCallback((key: PickerSortKey) => {
+    setPickerSort((prev) => (prev.key === key ? { key, asc: !prev.asc } : { key, asc: true }));
+  }, []);
 
   const listScrollRef = useRef<HTMLDivElement>(null);
   const listScrollRafRef = useRef<number | null>(null);
@@ -377,8 +459,17 @@ function MarketInventoryPickerDialog({
     if (!open) return;
     const el = listScrollRef.current;
     if (el) el.scrollTop = 0;
-    setListScrollTop(0);
+    const id = requestAnimationFrame(() => setListScrollTop(0));
+    return () => cancelAnimationFrame(id);
+  }, [open, mode, pickerSort, deferredSearch, moveableOnly]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const id = requestAnimationFrame(() => searchInputRef.current?.focus());
+    return () => cancelAnimationFrame(id);
   }, [open, mode]);
+
+  const searchPending = search !== deferredSearch;
 
   const onPickerListScroll = useCallback(() => {
     if (listScrollRafRef.current != null) return;
@@ -389,7 +480,7 @@ function MarketInventoryPickerDialog({
     });
   }, []);
 
-  const pickerListTotal = filteredRows.length;
+  const pickerListTotal = sortedFilteredRows.length;
   const pickerStartIdx = Math.max(
     0,
     Math.floor(listScrollTop / PICKER_LIST_ROW_PX) - PICKER_LIST_OVERSCAN
@@ -408,25 +499,62 @@ function MarketInventoryPickerDialog({
     });
   };
 
+  const visibleRowKeys = useMemo(() => sortedFilteredRows.map(pickerRowKey), [sortedFilteredRows]);
+  const allVisibleSelected =
+    visibleRowKeys.length > 0 && visibleRowKeys.every((k) => selectedKeys.has(k));
+  const someVisibleSelected = visibleRowKeys.some((k) => selectedKeys.has(k));
+
+  useLayoutEffect(() => {
+    const el = headerSelectAllRef.current;
+    if (!el) return;
+    el.indeterminate = someVisibleSelected && !allVisibleSelected;
+  }, [someVisibleSelected, allVisibleSelected]);
+
   const selectAllVisible = () => {
-    setSelectedKeys(new Set(filteredRows.map(pickerRowKey)));
+    setSelectedKeys(new Set(visibleRowKeys));
+  };
+
+  const toggleSelectAllVisible = () => {
+    if (allVisibleSelected) {
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        for (const k of visibleRowKeys) next.delete(k);
+        return next;
+      });
+    } else {
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        for (const k of visibleRowKeys) next.add(k);
+        return next;
+      });
+    }
   };
 
   const clearSelection = () => setSelectedKeys(new Set());
 
-  const selectedRows = useMemo(() => {
+  const apply = useCallback(() => {
     const want = selectedKeys;
-    return inventoryRows.filter((r) => want.has(pickerRowKey(r)));
-  }, [inventoryRows, selectedKeys]);
-
-  const apply = () => {
-    const rows =
-      mode === 'commodity'
-        ? selectedRows.filter(isSteamMultisellCommodityRow)
-        : selectedRows.filter((r) => !isSteamMultisellCommodityRow(r));
+    const rows = inventoryRows.filter((r) => {
+      if (!want.has(pickerRowKey(r))) return false;
+      return mode === 'commodity'
+        ? isSteamMultisellCommodityRow(r)
+        : !isSteamMultisellCommodityRow(r);
+    });
     onConfirm(rows);
     onClose();
-  };
+  }, [inventoryRows, selectedKeys, mode, onConfirm, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return;
+      if (selectedKeys.size === 0) return;
+      e.preventDefault();
+      apply();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, apply]);
 
   const title = mode === 'commodity' ? 'Pick commodities' : 'Pick unique items';
   const blurb =
@@ -480,13 +608,44 @@ function MarketInventoryPickerDialog({
               </div>
 
               <div className="frost-sep-b shrink-0 space-y-2 border-b-0 px-4 py-3">
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by item or market name…"
-                  className="w-full rounded-md border border-gray-600 bg-dark-level-one px-3 py-2 text-sm text-zinc-100 placeholder:text-gray-600 focus:border-kryo-navy-500 focus:outline-none focus:ring-1 focus:ring-kryo-navy-500"
-                />
+                <div className="relative">
+                  <input
+                    ref={searchInputRef}
+                    type="search"
+                    value={search}
+                    autoComplete="off"
+                    aria-busy={searchPending}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search by item or market name…"
+                    className="w-full rounded-md border border-gray-600 bg-dark-level-one py-2 pl-3 pr-9 text-sm text-zinc-100 placeholder:text-gray-600 focus:border-kryo-navy-500 focus:outline-none focus:ring-1 focus:ring-kryo-navy-500"
+                  />
+                  {search.trim() !== '' ? (
+                    <button
+                      type="button"
+                      className={classNames(
+                        focusRingBtn,
+                        'absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-gray-500 hover:bg-dark-level-four hover:text-zinc-200'
+                      )}
+                      onClick={() => setSearch('')}
+                      aria-label="Clear search"
+                    >
+                      <XMarkIcon className="h-4 w-4" aria-hidden />
+                    </button>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span
+                    className={classNames(
+                      'text-xs tabular-nums',
+                      searchPending ? 'text-gray-600' : 'text-gray-500'
+                    )}
+                  >
+                    {sortedFilteredRows.length.toLocaleString()} matching
+                  </span>
+                  {searchPending ? (
+                    <span className="text-[11px] text-gray-600">Updating…</span>
+                  ) : null}
+                </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-gray-400">
                     <input
@@ -509,8 +668,13 @@ function MarketInventoryPickerDialog({
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button type="button" className={classNames(btnDefault, 'px-2 py-1 text-xs')} onClick={selectAllVisible}>
-                    Select visible ({filteredRows.length})
+                  <button
+                    type="button"
+                    className={classNames(btnDefault, 'px-2 py-1 text-xs')}
+                    onClick={selectAllVisible}
+                    disabled={sortedFilteredRows.length === 0}
+                  >
+                    Select visible ({sortedFilteredRows.length.toLocaleString()})
                   </button>
                   <button type="button" className={classNames(btnDefault, 'px-2 py-1 text-xs')} onClick={clearSelection}>
                     Clear selection
@@ -518,19 +682,69 @@ function MarketInventoryPickerDialog({
                 </div>
               </div>
 
-              <div
-                ref={listScrollRef}
-                onScroll={onPickerListScroll}
-                className="min-h-0 flex-1 overflow-y-auto px-2 py-2"
-              >
-                {filteredRows.length === 0 ? (
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div
+                  className={classNames(
+                    'frost-sep-b grid shrink-0 grid-cols-[1.75rem_2.25rem_1fr_minmax(4.5rem,auto)] items-center gap-2 border-b border-gray-700/40 bg-dark-level-three/95 px-2 py-1.5 backdrop-blur-sm',
+                    searchPending && 'opacity-80'
+                  )}
+                >
+                  <span className="flex justify-center">
+                    <input
+                      ref={headerSelectAllRef}
+                      type="checkbox"
+                      className="h-3.5 w-3.5 cursor-pointer rounded border-gray-500 bg-dark-level-one text-kryo-navy-600 focus:ring-kryo-navy-500"
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectAllVisible}
+                      disabled={visibleRowKeys.length === 0}
+                      title="Select or clear all visible rows"
+                      aria-label="Select or clear all visible rows"
+                    />
+                  </span>
+                  <span className="h-9 w-9 shrink-0" aria-hidden />
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <PickerSortHeaderBtn
+                      label="Name"
+                      sortKey="name"
+                      current={pickerSort}
+                      onSort={togglePickerSort}
+                    />
+                    <PickerSortHeaderBtn
+                      label="Qty"
+                      sortKey="qty"
+                      current={pickerSort}
+                      onSort={togglePickerSort}
+                    />
+                    <PickerSortHeaderBtn
+                      label="Where"
+                      sortKey="source"
+                      current={pickerSort}
+                      onSort={togglePickerSort}
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <PickerSortHeaderBtn
+                      label="Price"
+                      sortKey="price"
+                      current={pickerSort}
+                      onSort={togglePickerSort}
+                      align="right"
+                    />
+                  </div>
+                </div>
+                <div
+                  ref={listScrollRef}
+                  onScroll={onPickerListScroll}
+                  className="min-h-0 flex-1 scroll-py-1 overflow-y-auto overscroll-contain px-2 py-2"
+                >
+                {sortedFilteredRows.length === 0 ? (
                   <p className="px-2 py-8 text-center text-sm text-gray-500">Nothing matches these filters.</p>
                 ) : (
                   <div
                     className="relative"
                     style={{ height: pickerListTotal * PICKER_LIST_ROW_PX }}
                   >
-                    {filteredRows.slice(pickerStartIdx, pickerEndIdx).map((r, vi) => {
+                    {sortedFilteredRows.slice(pickerStartIdx, pickerEndIdx).map((r, vi) => {
                       const index = pickerStartIdx + vi;
                       const k = pickerRowKey(r);
                       const checked = selectedKeys.has(k);
@@ -545,33 +759,36 @@ function MarketInventoryPickerDialog({
                           <button
                             type="button"
                             onClick={() => toggleKey(k)}
+                            aria-pressed={checked}
                             className={classNames(
-                              'flex h-full w-full items-center gap-2 rounded-lg border px-2 py-1 text-left transition-colors',
+                              'grid h-full w-full grid-cols-[1.75rem_2.25rem_1fr_minmax(4.5rem,auto)] items-center gap-2 rounded-lg border px-2 py-1 text-left transition-[background-color,border-color] duration-150',
                               checked
                                 ? 'border-kryo-navy-600/70 bg-kryo-navy-950/40'
-                                : 'border-transparent bg-dark-level-two/40 hover:bg-dark-level-two/80'
+                                : 'border-transparent bg-dark-level-two/40 hover:border-gray-700/50 hover:bg-dark-level-two/80 active:bg-dark-level-two'
                             )}
                           >
-                            <span
-                              className={classNames(
-                                'flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px]',
-                                checked
-                                  ? 'border-kryo-navy-500 bg-kryo-navy-800 text-white'
-                                  : 'border-gray-500 bg-dark-level-one'
-                              )}
-                              aria-hidden
-                            >
-                              {checked ? '✓' : ''}
+                            <span className="flex justify-center">
+                              <span
+                                className={classNames(
+                                  'flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] leading-none',
+                                  checked
+                                    ? 'border-kryo-navy-500 bg-kryo-navy-800 text-white'
+                                    : 'border-gray-500 bg-dark-level-one'
+                                )}
+                                aria-hidden
+                              >
+                                {checked ? '✓' : ''}
+                              </span>
                             </span>
                             <LineThumb srcKey={thumbFor(display)} />
-                            <span className="min-w-0 flex-1">
+                            <span className="min-w-0">
                               <span className="block truncate text-sm text-zinc-100">{display}</span>
                               <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-gray-500">
                                 <span className="tabular-nums">×{qty}</span>
                                 <span>{pickerSourceLabel(r)}</span>
                               </span>
                             </span>
-                            <span className="shrink-0 text-right text-[11px] font-medium tabular-nums text-emerald-400/90">
+                            <span className="min-w-0 text-right text-[11px] font-medium tabular-nums text-emerald-400/90">
                               {formatRowUnitPrice(r)}
                             </span>
                           </button>
@@ -580,21 +797,46 @@ function MarketInventoryPickerDialog({
                     })}
                   </div>
                 )}
+                </div>
               </div>
 
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-gray-700/80 px-4 py-3">
-                <span className="mr-auto text-xs text-gray-500">{selectedKeys.size} selected</span>
-                <button type="button" className={classNames(btnDefault, 'px-3 py-2 text-sm')} onClick={onClose}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className={classNames(btnPrimary, 'px-3 py-2 text-sm disabled:opacity-45')}
-                  disabled={selectedKeys.size === 0}
-                  onClick={apply}
-                >
-                  {mode === 'commodity' ? 'Add to commodity list' : 'Add to unique list'}
-                </button>
+              <div className="shrink-0 space-y-2 border-t border-gray-700/80 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <span className="mr-auto text-xs text-gray-500">
+                    <span className="tabular-nums">{selectedKeys.size.toLocaleString()}</span> selected
+                  </span>
+                  <button type="button" className={classNames(btnDefault, 'px-3 py-2 text-sm')} onClick={onClose}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className={classNames(
+                      btnPrimary,
+                      'px-3 py-2 text-sm disabled:pointer-events-none disabled:opacity-45'
+                    )}
+                    disabled={selectedKeys.size === 0}
+                    onClick={apply}
+                  >
+                    {mode === 'commodity'
+                      ? `Add to commodity list (${selectedKeys.size.toLocaleString()})`
+                      : `Add to unique list (${selectedKeys.size.toLocaleString()})`}
+                  </button>
+                </div>
+                <p className="text-[11px] leading-snug text-gray-600">
+                  <span className="text-gray-500">Shortcut:</span>{' '}
+                  <kbd className="rounded border border-gray-600 bg-dark-level-two px-1 font-mono text-[10px] text-gray-400">
+                    Ctrl
+                  </kbd>
+                  {' / '}
+                  <kbd className="rounded border border-gray-600 bg-dark-level-two px-1 font-mono text-[10px] text-gray-400">
+                    ⌘
+                  </kbd>
+                  {' + '}
+                  <kbd className="rounded border border-gray-600 bg-dark-level-two px-1 font-mono text-[10px] text-gray-400">
+                    Enter
+                  </kbd>{' '}
+                  adds the current selection.
+                </p>
               </div>
             </DialogPanel>
           </TransitionChild>
@@ -604,37 +846,19 @@ function MarketInventoryPickerDialog({
   );
 }
 
-export default function MarketMultisellHelper() {
+type MarketMultisellBodyProps = {
+  inventory: ItemRow[];
+  combinedInventory: ItemRow[];
+  storageInventoryRaw: ItemRow[];
+};
+
+function MarketMultisellHelperBody({ inventory, combinedInventory, storageInventoryRaw }: MarketMultisellBodyProps) {
   const settingsData = useSelector(selectSettings);
   const pricingState = useSelector(selectPricing);
-  const { inventory, combinedInventory, storageInventory, storageInventoryRaw } =
-    useSelector(selectInventory);
 
   const priceFmt = useMemo(
     () => new ConvertPricesFormatted(settingsData, pricingState),
     [settingsData, pricingState]
-  );
-
-  const marketLineUnitPrice = useCallback(
-    (marketName: string) => {
-      const t = marketName.trim();
-      if (!t) return '—';
-      const p = priceFmt.getPrice(syntheticItemRowForMarketPrice(t));
-      if (!Number.isFinite(p) || p <= 0) return '—';
-      return priceFmt.formatPrice(p);
-    },
-    [priceFmt]
-  );
-
-  const marketLineSubtotal = useCallback(
-    (marketName: string, qty: number) => {
-      const t = marketName.trim();
-      if (!t) return '—';
-      const p = priceFmt.getPrice(syntheticItemRowForMarketPrice(t));
-      if (!Number.isFinite(p) || p <= 0) return '—';
-      return priceFmt.formatPrice(p * Math.max(1, qty));
-    },
-    [priceFmt]
   );
 
   const formatPickerRowUnitPrice = useCallback(
@@ -642,6 +866,14 @@ export default function MarketMultisellHelper() {
       const p = priceFmt.getPrice(r);
       if (!Number.isFinite(p) || p <= 0) return '—';
       return priceFmt.formatPrice(p);
+    },
+    [priceFmt]
+  );
+
+  const getPickerRowUnitPriceNum = useCallback(
+    (r: ItemRow) => {
+      const p = priceFmt.getPrice(r);
+      return Number.isFinite(p) && p > 0 ? p : 0;
     },
     [priceFmt]
   );
@@ -660,15 +892,59 @@ export default function MarketMultisellHelper() {
   const [openError, setOpenError] = useState<string | null>(null);
   const [lastLoadCounts, setLastLoadCounts] = useState<{ c: number; u: number } | null>(null);
   const [pickerTarget, setPickerTarget] = useState<'commodity' | 'unique' | null>(null);
+  /** Bumps on each open so the picker remounts with fresh local state (avoids effect-driven resets). */
+  const [pickerMountKey, setPickerMountKey] = useState(0);
+
+  /** One `getPrice` per distinct market name when lines or pricing change; table cells read maps only. */
+  const marketLinePriceCache = useMemo(() => {
+    const names = new Set<string>();
+    for (const l of commodityLines) {
+      const t = l.name.trim();
+      if (t) names.add(t);
+    }
+    for (const l of uniqueLines) {
+      const t = l.name.trim();
+      if (t) names.add(t);
+    }
+    const unit = new Map<string, number>();
+    const formatted = new Map<string, string>();
+    for (const t of names) {
+      const p = priceFmt.getPrice(syntheticItemRowForMarketPrice(t));
+      if (Number.isFinite(p) && p > 0) {
+        unit.set(t, p);
+        formatted.set(t, priceFmt.formatPrice(p));
+      }
+    }
+    return { unit, formatted };
+  }, [priceFmt, commodityLines, uniqueLines]);
+
+  const marketLineUnitPrice = useCallback(
+    (marketName: string) => {
+      const t = marketName.trim();
+      if (!t) return '—';
+      return marketLinePriceCache.formatted.get(t) ?? '—';
+    },
+    [marketLinePriceCache]
+  );
+
+  const marketLineSubtotal = useCallback(
+    (marketName: string, qty: number) => {
+      const t = marketName.trim();
+      if (!t) return '—';
+      const p = marketLinePriceCache.unit.get(t);
+      if (p == null || p <= 0) return '—';
+      return priceFmt.formatPrice(p * Math.max(1, qty));
+    },
+    [marketLinePriceCache, priceFmt]
+  );
 
   const getUnitPriceNum = useCallback(
     (marketName: string) => {
       const t = marketName.trim();
       if (!t) return 0;
-      const p = priceFmt.getPrice(syntheticItemRowForMarketPrice(t));
-      return Number.isFinite(p) && p > 0 ? p : 0;
+      return marketLinePriceCache.unit.get(t) ?? 0;
     },
-    [priceFmt]
+    [marketLinePriceCache]
   );
 
   const sortedCommodityLines = useMemo(
@@ -719,15 +995,10 @@ export default function MarketMultisellHelper() {
   );
   const urlLong = url.length > URL_LENGTH_WARN;
 
+  // Skip `storageInventory`: same icon URLs as raw rows; one less full scan on huge loads.
   const itemUrlByName = useMemo(
-    () =>
-      buildItemUrlLookup([
-        inventory as ItemRow[] | undefined,
-        combinedInventory as ItemRow[] | undefined,
-        storageInventory as ItemRow[] | undefined,
-        storageInventoryRaw as ItemRow[] | undefined,
-      ]),
-    [inventory, combinedInventory, storageInventory, storageInventoryRaw]
+    () => buildItemUrlLookup([inventory, combinedInventory, storageInventoryRaw]),
+    [inventory, combinedInventory, storageInventoryRaw]
   );
 
   const thumbSrc = (name: string) => {
@@ -889,7 +1160,10 @@ export default function MarketMultisellHelper() {
           <button
             type="button"
             className={classNames(btnPrimary, 'px-3 py-2 text-sm inline-flex items-center gap-2')}
-            onClick={() => setPickerTarget('commodity')}
+            onClick={() => {
+              setPickerMountKey((k) => k + 1);
+              setPickerTarget('commodity');
+            }}
           >
             <InboxStackIcon className="h-4 w-4 shrink-0" aria-hidden />
             Pick commodities
@@ -1067,7 +1341,10 @@ export default function MarketMultisellHelper() {
           <button
             type="button"
             className={classNames(btnPrimary, 'px-3 py-2 text-sm inline-flex items-center gap-2')}
-            onClick={() => setPickerTarget('unique')}
+            onClick={() => {
+              setPickerMountKey((k) => k + 1);
+              setPickerTarget('unique');
+            }}
           >
             <InboxStackIcon className="h-4 w-4 shrink-0" aria-hidden />
             Pick unique items
@@ -1178,15 +1455,29 @@ export default function MarketMultisellHelper() {
         </p>
 
         <MarketInventoryPickerDialog
+          key={pickerMountKey}
           open={pickerTarget !== null}
           mode={pickerTarget ?? 'commodity'}
           onClose={() => setPickerTarget(null)}
           inventoryRows={inventoryRowsFlat}
           itemUrlByName={itemUrlByName}
           formatRowUnitPrice={formatPickerRowUnitPrice}
+          getRowUnitPriceNum={getPickerRowUnitPriceNum}
           onConfirm={pickerTarget === 'unique' ? applyUniquePicker : applyCommodityPicker}
         />
       </div>
     </div>
+  );
+}
+
+/** Inventory-only subscription so pricing ticks do not rebuild icon maps / row flattening. */
+export default function MarketMultisellHelper() {
+  const { inventory, combinedInventory, storageInventoryRaw } = useSelector(selectInventory);
+  return (
+    <MarketMultisellHelperBody
+      inventory={inventory}
+      combinedInventory={combinedInventory}
+      storageInventoryRaw={storageInventoryRaw}
+    />
   );
 }

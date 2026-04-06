@@ -2,9 +2,10 @@ import { useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RequestPrices } from 'renderer/functionsClasses/prices.ts';
 import { selectAuth } from 'renderer/store/slices/auth.ts';
-import { selectInventory } from 'renderer/store/slices/inventory.ts';
 import { selectPricing } from 'renderer/store/slices/pricing.ts';
 import { selectSettings } from 'renderer/store/slices/settings.ts';
+import { store } from 'renderer/store/configureStore.ts';
+import type { RootState } from 'renderer/store/rootReducer.ts';
 
 /**
  * One place to queue Steam price lookups for the whole account (inventory + loaded storage).
@@ -16,7 +17,9 @@ export function useAccountWidePricingRequest() {
   const { isLoggedIn } = useSelector(selectAuth);
   const settingsData = useSelector(selectSettings);
   const pricingData = useSelector(selectPricing);
-  const inventory = useSelector(selectInventory);
+  const combinedLen = useSelector((s: RootState) => s.inventory.combinedInventory?.length ?? 0);
+  const storLen = useSelector((s: RootState) => s.inventory.storageInventory?.length ?? 0);
+  const bulkActive = useSelector((s: RootState) => s.inventory.storageBulkLoadActive ?? false);
   const lastKeyRef = useRef('');
   /** Previous storage row count — when it grows, only queue new storage work (see extendProgress). */
   const prevStorLenRef = useRef<number | null>(null);
@@ -24,8 +27,11 @@ export function useAccountWidePricingRequest() {
   const prevBulkRef = useRef(false);
   const pricingRef = useRef(pricingData);
   const settingsRef = useRef(settingsData);
-  pricingRef.current = pricingData;
-  settingsRef.current = settingsData;
+
+  useEffect(() => {
+    pricingRef.current = pricingData;
+    settingsRef.current = settingsData;
+  }, [pricingData, settingsData]);
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -38,15 +44,13 @@ export function useAccountWidePricingRequest() {
   useEffect(() => {
     if (!isLoggedIn) return;
 
-    const bulkActive = inventory.storageBulkLoadActive ?? false;
     const bulkJustEnded = prevBulkRef.current === true && bulkActive === false;
     prevBulkRef.current = bulkActive;
 
     // While bulk-loading all storage caskets, skip pricing so row counts (and progress %) don't thrash.
     if (bulkActive) return;
 
-    const invLen = inventory.combinedInventory?.length ?? 0;
-    const storLen = inventory.storageInventory?.length ?? 0;
+    const invLen = combinedLen;
     const prevStor = prevStorLenRef.current;
 
     const requestKey =
@@ -73,8 +77,9 @@ export function useAccountWidePricingRequest() {
     const afterBulkStorageOnly = bulkJustEnded && prevStor !== null;
     const storageRowsOnly = storageIncremental || afterBulkStorageOnly;
 
-    const combined = inventory.combinedInventory ?? [];
-    const storageRows = inventory.storageInventory ?? [];
+    const invState = store.getState().inventory;
+    const combined = invState.combinedInventory ?? [];
+    const storageRows = invState.storageInventory ?? [];
     const rows = storageRowsOnly ? [...storageRows] : [...combined, ...storageRows];
     const scope: 'total' | 'storage' = storageRowsOnly ? 'storage' : 'total';
     if (rows.length === 0) {
@@ -101,9 +106,9 @@ export function useAccountWidePricingRequest() {
     isLoggedIn,
     settingsData?.source?.title,
     settingsData?.currency,
-    inventory.combinedInventory?.length,
-    inventory.storageInventory?.length,
-    inventory.storageBulkLoadActive,
+    combinedLen,
+    storLen,
+    bulkActive,
     pricingData.isFetching,
   ]);
 }

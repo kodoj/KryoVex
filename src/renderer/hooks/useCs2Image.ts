@@ -155,20 +155,23 @@ export function useCs2Image(pathLike: string, options?: { fallback?: string }) {
   const variants = useMemo(() => keyVariants(normalizedKey), [normalizedKey]);
   const direct = useMemo(() => immediateUrlOrEmpty(pathLike), [pathLike]);
 
-  const [resolved, setResolved] = useState<string>(direct || '');
+  /** URL resolved from `images.json` only; `direct` URLs are not mirrored here. */
+  const [mapUrl, setMapUrl] = useState('');
+
+  const resolved = direct || (normalizedKey ? mapUrl : '');
 
   useEffect(() => {
     let cancelled = false;
+    const runAfterPaint = (fn: () => void) => {
+      queueMicrotask(() => {
+        if (!cancelled) fn();
+      });
+    };
 
-    if (direct) {
-      setResolved(direct);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (!normalizedKey) {
-      setResolved('');
+    if (direct || !normalizedKey) {
+      if (!direct && !normalizedKey) {
+        runAfterPaint(() => setMapUrl(''));
+      }
       return () => {
         cancelled = true;
       };
@@ -180,7 +183,6 @@ export function useCs2Image(pathLike: string, options?: { fallback?: string }) {
       notify();
     }
 
-    // Fast path if cache already loaded.
     if (__imagesJsonCache) {
       let cachedUrl = '';
       for (const k of variants) {
@@ -188,20 +190,19 @@ export function useCs2Image(pathLike: string, options?: { fallback?: string }) {
         if (cachedUrl) break;
       }
       if (cachedUrl) {
-      if (!__seenResolved.has(normalizedKey)) {
-        __seenResolved.add(normalizedKey);
-        __status = { ...__status, resolved: __seenResolved.size };
-        notify();
-      }
-      setResolved(cachedUrl);
-      return () => {
-        cancelled = true;
-      };
+        if (!__seenResolved.has(normalizedKey)) {
+          __seenResolved.add(normalizedKey);
+          __status = { ...__status, resolved: __seenResolved.size };
+          notify();
+        }
+        runAfterPaint(() => setMapUrl(cachedUrl));
+        return () => {
+          cancelled = true;
+        };
       }
     }
 
-    // Otherwise load and resolve.
-    setResolved(''); // will render fallback
+    runAfterPaint(() => setMapUrl(''));
     loadImagesJson().then((map) => {
       if (cancelled) return;
       let url = '';
@@ -219,20 +220,23 @@ export function useCs2Image(pathLike: string, options?: { fallback?: string }) {
         if (!__seenMissing.has(normalizedKey)) {
           __seenMissing.add(normalizedKey);
           if (__missingSamples.length < 5) __missingSamples.push(normalizedKey);
-          __status = { ...__status, missing: __seenMissing.size, missingSamples: [...__missingSamples] };
+          __status = {
+            ...__status,
+            missing: __seenMissing.size,
+            missingSamples: [...__missingSamples],
+          };
           notify();
         }
       }
-      setResolved(url);
+      setMapUrl(url);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [direct, normalizedKey]);
+  }, [direct, normalizedKey, variants]);
 
   const out = resolved || fallback;
   if (!out || out === fallback || out.startsWith('data:')) return out;
   return preferLargerSteamEconomyImage(out);
 }
-

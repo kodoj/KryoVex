@@ -70,16 +70,21 @@ function spawnBg(cmd, args, opts = {}) {
 async function main() {
   await freePort1212();
 
-  // Fast path: do a one-shot tsup build first so Electron can start quickly.
   const tsupCli = path.join(ROOT, 'node_modules', 'tsup', 'dist', 'cli-default.js');
   const viteCli = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
+
+  // Overlap Vite with the one-shot main bundle so `wait-electron-dev` hits a warm dev
+  // server sooner (previously tsup finished completely before Vite even started).
+  spawnBg(process.execPath, [viteCli], {
+    cwd: ROOT,
+    env: withBinPath(process.env),
+  });
 
   await runOnce(process.execPath, [tsupCli], {
     cwd: ROOT,
     env: withBinPath(process.env),
   });
 
-  // Now start watchers.
   // Watch only main/preload sources to avoid a slow full-repo scan that can
   // trigger a late first rebuild (and restart electronmon ~30s later).
   spawnBg(process.execPath, [
@@ -99,18 +104,13 @@ async function main() {
     env: withBinPath(process.env),
   });
 
-  spawnBg(process.execPath, [viteCli], {
-    cwd: ROOT,
-    env: withBinPath(process.env),
-  });
-
   // Start Electron (waits for Vite + build outputs).
   await runOnce(
     process.execPath,
     [path.join(ROOT, 'scripts', 'wait-electron-dev.mjs')],
     {
       cwd: ROOT,
-      env: { ...process.env, DEV_FAST: 'true' },
+      env: { ...process.env, DEV_FAST: 'true', ELECTRON_IS_DEV: '1' },
     }
   );
 }

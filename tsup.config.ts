@@ -43,11 +43,8 @@ export default defineConfig(() => {
       },
       external: [
         'electron',
-        '@electron/remote',
         'electron-debug',
-        'electron-dl',
         'electron-log',
-        'electron-redux',
         'electron-store',
         'electron-updater',
         'axios',

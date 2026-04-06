@@ -23,7 +23,8 @@ export class Currency {
     if (!this.fetchPromise) {
       this.fetchPromise = this.fetchLiveRates();
     }
-    await this.fetchPromise;
+    // Do not block app startup on ECB network; backup rates are enough for first paint.
+    void this.fetchPromise;
   }
 
   private async loadBackup() {

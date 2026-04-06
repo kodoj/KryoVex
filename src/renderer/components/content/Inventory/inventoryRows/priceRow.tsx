@@ -1,9 +1,12 @@
-
+import { useMemo } from "react";
 import { ConvertPricesFormatted } from "renderer/functionsClasses/prices.ts";
 
 
 export function RowPrice({itemRow, settingsData, pricesReducer}) { 
-    const PricesClass = new ConvertPricesFormatted(settingsData, pricesReducer)
+    const PricesClass = useMemo(
+      () => new ConvertPricesFormatted(settingsData, pricesReducer),
+      [settingsData, pricesReducer]
+    );
     const price = PricesClass.getPrice(itemRow)
     const formattedPrice = PricesClass.getFormattedPrice(itemRow)
     const formattedPriceCombined = PricesClass.getFormattedPriceCombined(itemRow)

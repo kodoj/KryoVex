@@ -1,53 +1,41 @@
 import { defineConfig, loadEnv } from 'vite';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import tsconfigPaths from 'vite-tsconfig-paths';
-import { createHtmlPlugin } from 'vite-plugin-html';
-import { visualizer } from 'rollup-plugin-visualizer'; // FIXED: Use rollup-plugin-visualizer instead of vite-bundle-visualizer (which is a CLI tool, not a plugin)
-import { resolve } from 'path';
-import { ViteEjsPlugin } from 'vite-plugin-ejs';
+import { visualizer } from 'rollup-plugin-visualizer';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const repoRoot = process.cwd();
+/** Avoid `require()` so Node/Vite can cache the config module without re-evaluating CJS. */
+const packageVersion = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')).version as string;
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
+  const env = loadEnv(mode, repoRoot, '');
   const isDevelopment = mode === 'development';
   const isDebugProd = env.DEBUG_PROD === 'true';
-  const packageJson = require('./package.json') as { version: string };
 
   const plugins: import('vite').PluginOption[] = [
+    // Tailwind via Vite (faster dev than PostCSS pipeline alone).
+    tailwindcss(),
     react(),
-    tsconfigPaths({ projects: ['../../tsconfig.renderer.json'] }),
-    ViteEjsPlugin((_viteConfig) => ({
-      isDevelopment,
-      env: mode,
-      nodeModules: resolve(__dirname, 'node_modules'),
-    })),
-    createHtmlPlugin({
-      template: 'index.html',
-      minify: true,
-      inject: {
-        data: {
-          isBrowser: true,
-          env: mode,
-          isDevelopment,
-          nodeModules: resolve(__dirname, 'node_modules'),
-          tags: [],
-        },
-      },
-    }),
     mode === 'production' && env.OPEN_ANALYZER === 'true' ? visualizer({ open: true }) : null,
   ].filter(Boolean);
 
   return {
     plugins,
     root: 'src/renderer',
+    // Relative base breaks Vite dev asset URLs when opened from Electron; keep absolute root in dev.
+    base: isDevelopment ? '/' : './',
     build: {
       outDir: '../../dist/renderer',
       emptyOutDir: true,
       sourcemap: isDebugProd ? 'inline' : false,
-      minify: 'terser',
+      /** Gzip reporting is pure overhead for local/production CI builds here. */
+      reportCompressedSize: false,
+      /** esbuild minify is much faster than terser; fine for modern Electron/Chromium. */
+      minify: 'esbuild',
       rollupOptions: {
-        input: resolve(__dirname, 'src/renderer/index.html'),
-        // Do not set `external` to all package.json deps: the Electron renderer loads
-        // ESM like a browser and cannot resolve bare imports (e.g. `lodash`) at runtime.
+        input: resolve(repoRoot, 'src/renderer/index.html'),
         output: {
           format: 'es',
           entryFileNames: 'renderer.js',
@@ -60,45 +48,75 @@ export default defineConfig(({ mode }) => {
       cssMinify: true,
       commonjsOptions: { include: /node_modules/ },
     },
-    base: './',
     server: {
       port: 1212,
       strictPort: true,
       open: false,
       host: 'localhost',
+      /** Fewer fs checks; renderer only needs the repo tree. */
+      fs: {
+        allow: [repoRoot],
+      },
       proxy: {},
-      headers: isDevelopment ? {
-        // Dev CSP: allow fetching CS2 image map + Steam/CDN images.
-        // Keep 'unsafe-eval' for Vite/HMR in dev only.
-        'Content-Security-Policy': [
-          "default-src 'self' http://localhost:1212 ws://localhost:1212 'unsafe-inline' 'unsafe-eval'",
-          "connect-src 'self' http://localhost:1212 ws://localhost:1212 https://raw.githubusercontent.com https://community.akamai.steamstatic.com https://steamcommunity-a.akamaihd.net https://cdn.steamstatic.com",
-          "img-src 'self' data: blob: https://raw.githubusercontent.com https://community.akamai.steamstatic.com https://steamcommunity-a.akamaihd.net https://cdn.steamstatic.com https:",
-          "style-src 'self' 'unsafe-inline'",
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-        ].join('; ')
-      } : {},
+      // Do not inject CSP in dev: it can block Vite's client / dynamic imports in Electron and yields a blank window.
+      watch: {
+        // Vite `root` is `src/renderer`; avoid watching Electron main, releases, and build output (faster dev boot on Windows).
+        ignored: [
+          '**/node_modules/**',
+          '**/.git/**',
+          '../../dist/**',
+          '../../release/**',
+          '../../src/main/**',
+          '../../.erb/**',
+        ],
+      },
     },
     resolve: {
       extensions: ['.js', '.jsx', '.json', '.ts', '.tsx'],
+      dedupe: ['react', 'react-dom'],
       alias: {
+        '@': resolve(repoRoot, 'src/renderer'),
+        renderer: resolve(repoRoot, 'src/renderer'),
+        shared: resolve(repoRoot, 'src/shared'),
         events: 'events',
-        '_': 'lodash',
+        _: 'lodash',
         global: 'globalThis',
       },
       mainFields: ['module', 'main'],
     },
+    optimizeDeps: {
+      holdUntilCrawlEnd: false,
+      // Keep this list tight: each entry is esbuild'd before HTTP "ready". Chart.js and dnd
+      // load on-demand with their lazy routes (smaller cold start; first visit may pre-bundle).
+      include: [
+        'react',
+        'react-dom',
+        'react/jsx-runtime',
+        'react-router-dom',
+        '@reduxjs/toolkit',
+        'react-redux',
+        'redux-persist',
+        'redux-persist/es/storage',
+        '@headlessui/react',
+      ],
+      esbuildOptions: {
+        target: 'esnext',
+        legalComments: 'none',
+      },
+    },
     css: {
+      devSourcemap: false,
       modules: {
         localsConvention: 'camelCase',
       },
-      postcss: './postcss.config.mjs',
+      // Tailwind is handled by `@tailwindcss/vite`; Lightning CSS already prefixes. Skip autoprefixer in dev only.
+      postcss: isDevelopment ? { plugins: [] } : './postcss.config.mjs',
     },
     cacheDir: 'node_modules/.vite/renderer-dev',
     define: {
       'process.env.NODE_ENV': JSON.stringify(mode),
       'process.env.DEBUG_PROD': JSON.stringify(isDebugProd),
-      __KRYOVEX_VERSION__: JSON.stringify(packageJson.version),
+      __KRYOVEX_VERSION__: JSON.stringify(packageVersion),
     },
   };
 });

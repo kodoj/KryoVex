@@ -417,6 +417,12 @@ export default function Content() {
   const showInvSessionPricingLine =
     invSessionDenom > 0 && pricingData.isFetching && !invSurfaceSessionComplete;
 
+  const storageBulkProg = inventory.storageBulkLoadProgress;
+  const storageBulkLoadSpinning =
+    storageBulkProg != null &&
+    storageBulkProg.total > 0 &&
+    storageBulkProg.done < storageBulkProg.total;
+
   // While only Storage or Inv is pricing (e.g. after "load storage units"), rollup totalPriced can
   // already be 100% from backup — show account-wide progress: uniques outside the active session
   // count only if already priced; uniques in the session count when session maps mark them done.
@@ -872,7 +878,8 @@ export default function Content() {
                                               (storageSessionDenom === 0 &&
                                                 isRunActiveStorage &&
                                                 !storageRollupComplete) ||
-                                              showStorageSessionPricingLine)
+                                              showStorageSessionPricingLine) ||
+                                            storageBulkLoadSpinning
                                             ? "animate-spin"
                                             : ""
                                         )}
@@ -887,6 +894,11 @@ export default function Content() {
                                           : `Pricing ${storagePct}% (${storagePriced}/${storageUnique})`}
                                   </span>
                                 </div>
+                                {storageBulkLoadSpinning && storageBulkProg ? (
+                                  <div className="mt-0.5 text-xs text-amber-200/90 tabular-nums">
+                                    Reading caskets {storageBulkProg.done}/{storageBulkProg.total}…
+                                  </div>
+                                ) : null}
                                 <div className="mt-0.5 flex flex-wrap items-center justify-start gap-x-2 gap-y-1 leading-tight">
                                   <span
                                     className={classNames(

@@ -77,6 +77,8 @@ export interface Inventory {
   itemsLookUp: { [itemID: string]: 'storage_units'  | 'inventory'  },
   /** True while "Load storage units" is fetching all caskets — pricing waits until this clears. */
   storageBulkLoadActive: boolean,
+  /** Per-casket progress during bulk load (cheap updates; row data still flushes in strides). Cleared when bulk ends. */
+  storageBulkLoadProgress: { done: number; total: number } | null,
 };
 
 export interface InventoryNew {

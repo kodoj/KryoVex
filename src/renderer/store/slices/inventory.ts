@@ -12,6 +12,7 @@ const initialState: Inventory = {
   totalAccountItems: 0,
   itemsLookUp: {},
   storageBulkLoadActive: false,
+  storageBulkLoadProgress: null,
 };
 
 const inventorySlice = createSlice({
@@ -38,6 +39,23 @@ const inventorySlice = createSlice({
       state.storageInventory = add_to_filtered;
       state.storageInventoryRaw = add_to_filtered_raw;
     },
+    /** Bulk "load all": one reducer run replaces many per-casket dispatches (much faster UI). */
+    addStorageUnitsItemsBulk: (
+      state,
+      action: PayloadAction<Array<{ casketID: string; storageData: ItemRowStorage[]; storageRowsRaw: ItemRowStorage[] }>>
+    ) => {
+      const batches = action.payload;
+      if (batches.length === 0) return;
+      const replaceIds = new Set(batches.map((b) => b.casketID));
+      const inv = state.storageInventory.filter((id) => !replaceIds.has(String(id.storage_id)));
+      const raw = state.storageInventoryRaw.filter((id) => !replaceIds.has(String(id.storage_id)));
+      for (const b of batches) {
+        inv.push(...b.storageData);
+        raw.push(...b.storageRowsRaw);
+      }
+      state.storageInventory = inv;
+      state.storageInventoryRaw = raw;
+    },
     clearStorageUnitItems: (state, action: PayloadAction<{ casketID: string }>) => {
       const AddToFiltered = state.storageInventory.filter(id => id.storage_id !== action.payload.casketID);
       const AddToFilteredRaw = state.storageInventoryRaw.filter(id => id.storage_id !== action.payload.casketID);
@@ -53,6 +71,12 @@ const inventorySlice = createSlice({
     },
     setStorageBulkLoadActive: (state, action: PayloadAction<boolean>) => {
       state.storageBulkLoadActive = action.payload;
+      if (!action.payload) {
+        state.storageBulkLoadProgress = null;
+      }
+    },
+    setStorageBulkLoadProgress: (state, action: PayloadAction<{ done: number; total: number } | null>) => {
+      state.storageBulkLoadProgress = action.payload;
     },
     moveFromClear: () => {
       // No-op as per original; returns state unchanged
@@ -68,10 +92,12 @@ const inventorySlice = createSlice({
 export const {
   setInventory,
   addStorageUnitsItems,
+  addStorageUnitsItemsBulk,
   clearStorageUnitItems,
   setSortStorageUnits,
   clearAllStorageUnits,
   setStorageBulkLoadActive,
+  setStorageBulkLoadProgress,
   moveFromClear,
   moveFromReset,
   signOut,

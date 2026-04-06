@@ -89,8 +89,12 @@ export const useIpcUserEvents = (
         const actionToTake = await handleUserEvent(args, settingsRef.current);
         if (actionToTake) {
           dispatch(actionToTake);
+          // Defer filter/sort to the next task so inventory can commit and the UI can stay responsive.
           if (args[0] === 1 && handleFilterDataRef.current) {
-            await handleFilterDataRef.current((actionToTake.payload as any)?.combinedInventory || []);
+            const inv = (actionToTake.payload as any)?.combinedInventory || [];
+            window.setTimeout(() => {
+              void handleFilterDataRef.current?.(inv);
+            }, 0);
           }
         }
       } catch (error) {

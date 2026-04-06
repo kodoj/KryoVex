@@ -103,6 +103,9 @@ const pricingSlice = createSlice({
           state.sessionSurfaceDoneInv[name] = true;
         }
       });
+      // Per-card Overview progress uses session maps; align with any prices already in Redux so
+      // concurrent IPC chunks or skipped row updates cannot strand the spinner at a partial count.
+      reconcileSessionSurfacesWithPrices(state);
       if (DEBUG_PRICING) {
         console.log('Added prices for', action.payload.rows.length, 'items');
       }
@@ -296,8 +299,8 @@ const pricingSlice = createSlice({
       if (state.totalItems > 0) {
         state.fetchedCount = Math.min(state.totalItems, state.fetchedCount);
         state.isFetching = state.fetchedCount < state.totalItems;
-        if (!state.isFetching) reconcileSessionSurfacesWithPrices(state);
       }
+      reconcileSessionSurfacesWithPrices(state);
     },
     pricingClear: () => initialState,
     moveFromClear: (state) => {

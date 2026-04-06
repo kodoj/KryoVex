@@ -56,6 +56,12 @@ const moveFromSlice = createSlice({
       }
       state.activeStorages = chosenActiveCopy;
     },
+    /** Append many casket ids (bulk load). Does not toggle — ids are unioned in order. */
+    moveFromAppendCaskets: (state, action: PayloadAction<{ casketIDs: string[] }>) => {
+      const next = new Set(state.activeStorages);
+      for (const id of action.payload.casketIDs) next.add(id);
+      state.activeStorages = [...next];
+    },
     moveFromAddRemove: (
       state,
       action: PayloadAction<{ casketID: string; itemID: string; toMove: any[]; itemName: string }>
@@ -101,6 +107,7 @@ export const {
   moveFromsetSearchFieldStorage,
   setSort,
   moveFromAddCasketToStorages,
+  moveFromAppendCaskets,
   moveFromAddRemove,
   moveFromRemoveCasket,
   doCancel

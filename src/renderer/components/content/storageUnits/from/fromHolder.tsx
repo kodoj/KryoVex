@@ -112,13 +112,7 @@ export default function StorageUnits() {
       ) as any[];
     }
     return sortedRows;
-  }, [
-    filteredRows,
-    fromReducer.sortValue,
-    fromReducer.sortValue === 'Price' ? pricesResult.prices : null,
-    settingsData?.source?.title,
-    sortedRows,
-  ]);
+  }, [filteredRows, fromReducer.sortValue, pricesResult.prices, settingsData, sortedRows]);
 
   // Async fallback for huge lists.
   useEffect(() => {

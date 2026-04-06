@@ -11,9 +11,9 @@ import {
   ArrowUpTrayIcon,
   BuildingStorefrontIcon,
 } from '@heroicons/react/24/outline';
-import { Fragment, SetStateAction, Suspense, lazy, useEffect, useMemo, useRef, useState, Component } from 'react';
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, Component } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Link, Navigate, Outlet, Route, HashRouter as Router, Routes, useLocation } from 'react-router-dom';
+import { Link, Navigate, NavLink, Outlet, Route, HashRouter as Router, Routes, useLocation } from 'react-router-dom';
 import { itemCategories } from './components/content/shared/categories.tsx';
 import {
   btnIcon,
@@ -22,8 +22,7 @@ import {
   btnToolbarIcon,
 } from './components/content/shared/buttonStyles.ts';
 import { classNames, sortDataFunction } from './components/content/shared/filters/inventoryFunctions.ts';
-import kryoVexLogoUrl from './assets/kryovex-wordmark.png';
-import TradeResultModal from './components/content/shared/modals-notifcations/modalTradeResult.tsx';
+import kryoVexLogoUrl from './assets/kryovex-wordmark.webp';
 import itemRarities from './components/content/shared/rarities.tsx';
 import TitleBarWindows from './components/content/shared/titleBarWindows.tsx';
 import { filterItemRows } from './functionsClasses/filters/custom.ts';
@@ -38,7 +37,6 @@ import { ProtectedRoute, PublicRoute } from './views/login/components/ProtectedR
 import { toMoveContext } from './context/toMoveContext.tsx';
 import { selectModalMove } from './store/slices/modalMove.ts';
 import { selectSettings } from './store/slices/settings.ts';
-import { selectInventory } from './store/slices/inventory.ts';
 import { PersistGate } from 'redux-persist/integration/react';
 import { persistor } from './store/configureStore.ts';
 import { useIpcPricing } from './hooks/useIpcPricing.ts';
@@ -46,6 +44,11 @@ import { useIpcPricingProgress } from './hooks/useIpcPricingProgress.ts';
 import { useAccountWidePricingRequest } from './hooks/useAccountWidePricingRequest.ts';
 import { useIpcUserEvents } from './hooks/useIpcUserEvents.ts';
 import { KRYOVEX_RELEASE_VERSION } from './appMeta.ts';
+import type { RootState } from './store/rootReducer.ts';
+import type { ItemRow } from './interfaces/items.ts';
+
+/** Stable empty list so trade-detect skips subscribing to inventory when no snapshot is active. */
+const TRADE_DETECT_INV_IDLE: ItemRow[] = [];
 
 const LoginPage = lazy(() => import('./views/login/login.tsx'));
 const OverviewPage = lazy(() => import('./views/overview/overview.tsx'));
@@ -55,6 +58,23 @@ const InventoryContent = lazy(() => import('./components/content/Inventory/inven
 const StorageUnitsComponent = lazy(() => import('./components/content/storageUnits/from/Content.tsx'));
 const ToContent = lazy(() => import('./components/content/storageUnits/to/toHolder.tsx'));
 const MarketMultisellHelper = lazy(() => import('./views/market/marketMultisellHelper.tsx'));
+const TradeResultModal = lazy(() => import('./components/content/shared/modals-notifcations/modalTradeResult.tsx'));
+
+/** Warm Vite route chunks on hover so tab switches feel instant. */
+const routeChunkByPath: Partial<Record<string, () => Promise<unknown>>> = {
+  '/stats': () => import('./views/overview/overview.tsx'),
+  '/transferfrom': () => import('./components/content/storageUnits/from/Content.tsx'),
+  '/transferto': () => import('./components/content/storageUnits/to/toHolder.tsx'),
+  '/inventory': () => import('./components/content/Inventory/inventory.tsx'),
+  '/tradeup': () => import('./views/tradeUp/tradeUp.tsx'),
+  '/settings': () => import('./views/settings/settings.tsx'),
+  '/market': () => import('./views/market/marketMultisellHelper.tsx'),
+};
+
+function prefetchRouteChunk(pathname: string) {
+  const loader = routeChunkByPath[pathname];
+  if (loader) void loader();
+}
 
 function RouteFallback() {
   return (
@@ -105,7 +125,6 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError:
 function AppContent() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [currentSideMenuOption, setSideMenuOption] = useState(location.pathname);
   const [getToMoveContext, setToMoveContext] = useState({ fromStorage: {} });
   const toMoveValue = useMemo(() => ({ getToMoveContext, setToMoveContext }), [getToMoveContext, setToMoveContext]);
 
@@ -114,37 +133,43 @@ function AppContent() {
   const modalData = useSelector(selectModalMove);
   const settingsData = useSelector(selectSettings);
   const tradeUpData = useSelector(selectModalTrade);
-  const inventoryDetails = useSelector(selectInventory);
+  const inventoryRowsForTradeDetect = useSelector((s: RootState) =>
+    tradeUpData.inventoryFirst.length === 0 ? TRADE_DETECT_INV_IDLE : s.inventory.inventory
+  );
   const inventoryFilters = useSelector(selectInventoryFilters);
   const pricingDetails = useSelector(selectPricing);
   const dispatch = useDispatch();
 
-  useEffect(() => {
-    document.documentElement.classList.add('dark');
-  }, []);
-
-  // Update sidebar navigation
-  function updateAutomation(itemHref: SetStateAction<string>) {
-    setSideMenuOption(itemHref);
+  function closeSidebarOnNavigate() {
     setSidebarOpen(false);
   }
-
-  useEffect(() => {
-    setSideMenuOption(location.pathname);
-  }, [location.pathname]);
 
   // Initialize store and IPC classes
   const StoreClass = useMemo(() => new DispatchStore(dispatch), [dispatch]);
   const IPCClass = useMemo(() => new DispatchIPC(dispatch), [dispatch]);
 
-  // Filter inventory data
-  const handleFilterData = async (combinedInventory: Inventory['combinedInventory']) => {
-    if (inventoryFilters.inventoryFilter.length > 0 || inventoryFilters.sortValue !== 'Default') {
-      let filteredInv = await filterItemRows(combinedInventory, inventoryFilters.inventoryFilter);
-      filteredInv = await sortDataFunction(inventoryFilters.sortValue, filteredInv, pricingDetails.prices, settingsData?.source?.title);
-      dispatch(setFiltered({ inventoryFilter: inventoryFilters.inventoryFilter, sortValue: inventoryFilters.sortValue, inventoryFiltered: filteredInv }));
-    }
-  };
+  // Filter inventory data (stable ref for IPC path — avoids extra listener churn)
+  const handleFilterData = useCallback(
+    async (combinedInventory: Inventory['combinedInventory']) => {
+      if (inventoryFilters.inventoryFilter.length > 0 || inventoryFilters.sortValue !== 'Default') {
+        let filteredInv = await filterItemRows(combinedInventory, inventoryFilters.inventoryFilter);
+        filteredInv = await sortDataFunction(
+          inventoryFilters.sortValue,
+          filteredInv,
+          pricingDetails.prices,
+          settingsData.source?.title
+        );
+        dispatch(
+          setFiltered({
+            inventoryFilter: inventoryFilters.inventoryFilter,
+            sortValue: inventoryFilters.sortValue,
+            inventoryFiltered: filteredInv,
+          })
+        );
+      }
+    },
+    [dispatch, inventoryFilters.inventoryFilter, inventoryFilters.sortValue, pricingDetails.prices, settingsData]
+  );
 
   // Set initial settings on first login
   async function setFirstTimeSettings() {
@@ -196,6 +221,27 @@ function AppContent() {
     }
   }, [userDetails.isLoggedIn]);
 
+  // Warm Market link chunk after login so first open is not blocked on download/parse alone.
+  useEffect(() => {
+    if (!userDetails.isLoggedIn) return;
+    let cancelled = false;
+    const run = () => {
+      if (!cancelled) void import('./views/market/marketMultisellHelper.tsx');
+    };
+    const id =
+      typeof requestIdleCallback !== 'undefined'
+        ? requestIdleCallback(run, { timeout: 5000 })
+        : window.setTimeout(run, 3000);
+    return () => {
+      cancelled = true;
+      if (typeof requestIdleCallback !== 'undefined') {
+        cancelIdleCallback(id as number);
+      } else {
+        window.clearTimeout(id as number);
+      }
+    };
+  }, [userDetails.isLoggedIn]);
+
   // Pricing listener
   useIpcPricing();
 
@@ -220,10 +266,10 @@ function AppContent() {
   useEffect(() => {
     if (tradeUpData.inventoryFirst.length === 0) return;
     const pre = new Set(tradeUpData.inventoryFirst);
-    const newcomers = inventoryDetails.inventory.filter((el) => !pre.has(el.item_id));
+    const newcomers = inventoryRowsForTradeDetect.filter((el) => !pre.has(el.item_id));
     if (newcomers.length === 0) return;
     dispatch(setTradeFoundMatch({ matchRow: newcomers[0] }));
-  }, [tradeUpData.inventoryFirst, inventoryDetails.inventory, dispatch]);
+  }, [tradeUpData.inventoryFirst, inventoryRowsForTradeDetect, dispatch]);
 
   // JSX
   const isWin =
@@ -235,7 +281,9 @@ function AppContent() {
 
   return (
     <ErrorBoundary>
-      <TradeResultModal />
+      <Suspense fallback={null}>
+        <TradeResultModal />
+      </Suspense>
       {isWin ? <TitleBarWindows /> : null}
       <div
         className={classNames(
@@ -295,30 +343,36 @@ function AppContent() {
                   <nav className="px-2">
                     <div className="space-y-0.5">
                       {navigation.map((item) => (
-                        <Link
+                        <NavLink
                           key={item.name}
                           to={item.href}
-                          className={classNames(
-                            currentSideMenuOption.includes(item.href)
-                              ? 'bg-gray-100 text-gray-900 dark:bg-kryo-navy-900 dark:text-dark-white dark:shadow-[inset_0_0_0_1px_rgba(14,58,92,0.45)]'
-                              : 'text-gray-600 dark:text-gray-200 hover:text-gray-900 hover:bg-gray-50 dark:hover:bg-kryo-navy-800 dark:hover:ring-1 dark:hover:ring-inset dark:hover:ring-kryo-navy-600/50 dark:hover:text-dark-white',
-                            userDetails.isLoggedIn ? '' : 'pointer-events-none',
-                            'group flex items-center px-2 py-1.5 dark:text-dark-white text-base leading-5 font-semibold rounded-md'
-                          )}
-                          aria-current={item.current ? 'page' : undefined}
-                          onClick={() => updateAutomation(item.href)}
+                          onMouseEnter={() => prefetchRouteChunk(item.href)}
+                          className={({ isActive }) =>
+                            classNames(
+                              isActive
+                                ? 'bg-gray-100 text-gray-900 dark:bg-kryo-navy-900 dark:text-dark-white dark:shadow-[inset_0_0_0_1px_rgba(14,58,92,0.45)]'
+                                : 'text-gray-600 dark:text-gray-200 hover:text-gray-900 hover:bg-gray-50 dark:hover:bg-kryo-navy-800 dark:hover:ring-1 dark:hover:ring-inset dark:hover:ring-kryo-navy-600/50 dark:hover:text-dark-white',
+                              userDetails.isLoggedIn ? '' : 'pointer-events-none',
+                              'group flex items-center px-2 py-1.5 dark:text-dark-white text-base leading-5 font-semibold rounded-md'
+                            )
+                          }
+                          onClick={closeSidebarOnNavigate}
                         >
-                          <item.icon
-                            className={classNames(
-                              currentSideMenuOption.includes(item.href)
-                                ? 'text-gray-500 dark:text-opacity-60'
-                                : 'text-gray-400 group-hover:text-gray-500',
-                              'mr-2.5 shrink-0 h-6 w-6 dark:text-dark-white'
-                            )}
-                            aria-hidden="true"
-                          />
-                          {item.name}
-                        </Link>
+                          {({ isActive }) => (
+                            <>
+                              <item.icon
+                                className={classNames(
+                                  isActive
+                                    ? 'text-gray-500 dark:text-opacity-60'
+                                    : 'text-gray-400 group-hover:text-gray-500',
+                                  'mr-2.5 shrink-0 h-6 w-6 dark:text-dark-white'
+                                )}
+                                aria-hidden="true"
+                              />
+                              {item.name}
+                            </>
+                          )}
+                        </NavLink>
                       ))}
                     </div>
                     <div className="mt-4">
@@ -491,34 +545,40 @@ function AppContent() {
               <nav className="px-3 mt-3">
                 <div className="space-y-0.5">
                   {navigation.map((item) => (
-                    <Link
+                    <NavLink
                       key={item.href}
                       to={item.href}
                       title={item.name}
-                      className={classNames(
-                        currentSideMenuOption.includes(item.href)
-                          ? 'bg-gray-100 text-gray-900 dark:bg-kryo-navy-900 dark:text-dark-white dark:shadow-[inset_0_0_0_1px_rgba(14,58,92,0.45)]'
-                          : 'text-gray-600 dark:text-gray-200 hover:text-gray-900 hover:bg-gray-50 dark:hover:bg-kryo-navy-800 dark:hover:ring-1 dark:hover:ring-inset dark:hover:ring-kryo-navy-600/50 dark:hover:text-dark-white',
-                        userDetails.isLoggedIn ? '' : 'pointer-events-none',
-                        'group flex items-center px-2 py-1.5 dark:text-dark-white text-base leading-5 font-semibold rounded-md'
-                      )}
-                      aria-current={item.current ? 'page' : undefined}
-                      onClick={() => updateAutomation(item.href)}
+                      onMouseEnter={() => prefetchRouteChunk(item.href)}
+                      className={({ isActive }) =>
+                        classNames(
+                          isActive
+                            ? 'bg-gray-100 text-gray-900 dark:bg-kryo-navy-900 dark:text-dark-white dark:shadow-[inset_0_0_0_1px_rgba(14,58,92,0.45)]'
+                            : 'text-gray-600 dark:text-gray-200 hover:text-gray-900 hover:bg-gray-50 dark:hover:bg-kryo-navy-800 dark:hover:ring-1 dark:hover:ring-inset dark:hover:ring-kryo-navy-600/50 dark:hover:text-dark-white',
+                          userDetails.isLoggedIn ? '' : 'pointer-events-none',
+                          'group flex items-center px-2 py-1.5 dark:text-dark-white text-base leading-5 font-semibold rounded-md'
+                        )
+                      }
+                      onClick={closeSidebarOnNavigate}
                     >
-                      <item.icon
-                        className={classNames(
-                          currentSideMenuOption.includes(item.href)
-                            ? 'text-gray-500 dark:text-opacity-60'
-                            : 'text-gray-400 group-hover:text-gray-500',
-                          'mr-2.5 shrink-0 h-6 w-6 dark:text-dark-white'
-                        )}
-                        aria-hidden="true"
-                      />
-                      {item.name}
-                    </Link>
+                      {({ isActive }) => (
+                        <>
+                          <item.icon
+                            className={classNames(
+                              isActive
+                                ? 'text-gray-500 dark:text-opacity-60'
+                                : 'text-gray-400 group-hover:text-gray-500',
+                              'mr-2.5 shrink-0 h-6 w-6 dark:text-dark-white'
+                            )}
+                            aria-hidden="true"
+                          />
+                          {item.name}
+                        </>
+                      )}
+                    </NavLink>
                   ))}
                 </div>
-                {!currentSideMenuOption.includes('/tradeup') ? (
+                {!location.pathname.includes('/tradeup') ? (
                   <div className="mt-3 pb-0.5">
                     <h3
                       className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider"
@@ -614,6 +674,8 @@ function AppContent() {
               src={kryoVexLogoUrl}
               alt="KryoVex"
               className="mx-auto w-full max-w-[11rem] h-auto object-contain object-center"
+              decoding="async"
+              fetchPriority="low"
             />
             <div className="mt-2 flex justify-center">
               <span className="text-xs tabular-nums text-gray-500">v{KRYOVEX_RELEASE_VERSION}</span>
@@ -731,7 +793,7 @@ function DefaultRedirect() {
 
 export default function App() {
   return (
-    <PersistGate loading={null} persistor={persistor}>
+    <PersistGate loading={<RouteFallback />} persistor={persistor}>
       <Router>
         <Suspense fallback={<RouteFallback />}>
           <Routes>

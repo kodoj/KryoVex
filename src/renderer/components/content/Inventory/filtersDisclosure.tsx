@@ -6,7 +6,7 @@ import { filterInventoryAddOption } from 'renderer/store/thunks/inventoryFilters
 import { searchFilter } from 'renderer/functionsClasses/filters/search.ts';
 import { ConvertPrices } from 'renderer/functionsClasses/prices.ts';
 import { Filter, Filters } from 'renderer/interfaces/filters.ts';
-import * as _ from 'lodash';
+import { isEqual, some as lodashSome } from 'lodash';
 import { selectInventory } from 'renderer/store/slices/inventory.ts';
 import { selectPricing } from 'renderer/store/slices/pricing.ts';
 import { selectSettings } from 'renderer/store/slices/settings.ts';
@@ -56,7 +56,7 @@ export default function InventoryFiltersDisclosure({ClassFilters}) {
 
   Object.entries(ClassFilters.filters as Filters).map(([_key, filterObject]) => {
     filterObject.map((filter, _optionIdx) => {
-      if (inventoryFilters.inventoryFilter.filter(filt => _.isEqual(filt, filter)).length > 0) {
+      if (inventoryFilters.inventoryFilter.filter((filt) => isEqual(filt, filter)).length > 0) {
         totalSeen += 1
         ignoreCategories.push(filter)
       }
@@ -65,7 +65,7 @@ export default function InventoryFiltersDisclosure({ClassFilters}) {
   let categoriesToRemove: Array<Filter> = []
   if (inventoryFilters.inventoryFilter.length > totalSeen) {
     inventoryFilters.inventoryFilter.forEach(element => {
-      if (!_.some(ignoreCategories, element) && element.label != 'Storage moveable') {
+      if (!lodashSome(ignoreCategories, element) && element.label != 'Storage moveable') {
         categoriesToRemove.push(element)
       }
     });
@@ -97,7 +97,7 @@ export default function InventoryFiltersDisclosure({ClassFilters}) {
                         className="shrink-0 h-4 w-4 border-gray-300 rounded text-kryo-ice-400 focus:ring-kryo-ice-400"
                         onClick={() => addRemoveFilter(filter)}
                         checked={
-                          inventoryFilters.inventoryFilter.filter(filt => _.isEqual(filt, filter)).length > 0
+                          inventoryFilters.inventoryFilter.filter((filt) => isEqual(filt, filter)).length > 0
                             ? true
                             : false
                         }

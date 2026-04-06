@@ -12,6 +12,7 @@ import { selectInventory } from 'renderer/store/slices/inventory.ts';
 import { selectPricing } from 'renderer/store/slices/pricing.ts';
 import { selectSettings } from 'renderer/store/slices/settings.ts';
 import { pricingInventoryKey } from 'renderer/functionsClasses/prices.ts';
+import { store } from 'renderer/store/configureStore.ts';
 import { selectTradeUp, tradeUpSetPossible } from 'renderer/store/slices/tradeUp.ts';
 
 const rarityShort = {
@@ -118,11 +119,16 @@ export default function PossibleOutcomes() {
     }
     const key = tradeUpData.tradeUpProductsIDS.join('|');
     if (lastOutcomesKeyRef.current === key) return;
-    lastOutcomesKeyRef.current = key;
     window.electron.ipcRenderer
       .getPossibleOutcomes(tradeUpData.tradeUpProducts)
       .then((messageValue) => {
-        dispatch(tradeUpSetPossible(messageValue));
+        const latest = store.getState().tradeUp.tradeUpProductsIDS.join('|');
+        if (latest !== key) return;
+        dispatch(tradeUpSetPossible(Array.isArray(messageValue) ? messageValue : []));
+        lastOutcomesKeyRef.current = key;
+      })
+      .catch(() => {
+        lastOutcomesKeyRef.current = '';
       });
   }, [dispatch, tradeUpData.tradeUpProducts, tradeUpData.tradeUpProductsIDS]);
 

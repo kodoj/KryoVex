@@ -25,6 +25,11 @@ export class HandleStorageData {
     this.deps = deps;
   }
 
+  /** IPC + combine (+ optional sort) only — no Redux. Used to batch bulk "load all storages". */
+  async loadStoragePayload(storageRow: ItemRow, skipIntermediateSort: boolean) {
+    return this._getStorageUnitData(storageRow, skipIntermediateSort);
+  }
+
   async addStorage(storageRow: ItemRow, addArray: Array<ItemRow> = []) {
     const { settings, moveFrom, pricing, inventoryFilters, inventory, deferFilteredStorage } = this.deps;
 

@@ -21,7 +21,6 @@ export default [
       '.erb/**',
       '.erb/dll/**',
       'node_modules/**',
-      'local_modules/**',
       'coverage/**',
       'logs/**',
       '**/*.log',

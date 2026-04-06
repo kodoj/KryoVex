@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import {
   Dialog,
   DialogPanel,
@@ -16,7 +16,7 @@ import {
   setTradeFoundMatch,
   setTradeMove,
 } from 'renderer/store/slices/modalTrade.ts';
-import { selectTradeUp, tradeUpAddRemove } from 'renderer/store/slices/tradeUp.ts';
+import { selectTradeUp, tradeUpAddRemove, tradeUpSetPossible } from 'renderer/store/slices/tradeUp.ts';
 import { moveFromReset } from 'renderer/store/slices/moveFrom.ts';
 import { ConvertPricesFormatted } from 'renderer/functionsClasses/prices.ts';
 import {
@@ -109,16 +109,34 @@ export default function TradeModal() {
   }
 
   async function confirmContract() {
+    setConfirmError(null);
     const simulateOnly =
       (settingsData.tradeUpSimulateOnly ?? true) ||
       (typeof window.electron?.isTradeUpDryRun === 'function' &&
         window.electron.isTradeUpDryRun());
 
     if (simulateOnly) {
-      const picked = pickSimulatedOutcome(
-        (tradeUpData.possibleOutcomes ?? []) as unknown as Array<Record<string, unknown>>
-      );
-      if (!picked) return;
+      let outcomes = (tradeUpData.possibleOutcomes ?? []) as unknown as Array<Record<string, unknown>>;
+      if (!outcomes.length && tradeUpData.tradeUpProducts.length === 10) {
+        try {
+          const fetched = await window.electron.ipcRenderer.getPossibleOutcomes(
+            tradeUpData.tradeUpProducts
+          );
+          outcomes = Array.isArray(fetched) ? fetched : [];
+          dispatch(tradeUpSetPossible(outcomes as any));
+        } catch {
+          outcomes = [];
+        }
+      }
+      const picked = pickSimulatedOutcome(outcomes);
+      if (!picked) {
+        setConfirmError(
+          outcomes.length === 0
+            ? 'No simulated outcomes yet — check that all items are supported trade-up inputs, or wait a moment and try again.'
+            : 'Could not pick a simulated outcome. Try closing and reopening this dialog.'
+        );
+        return;
+      }
       const img = String(picked.image ?? '');
       const matchRow = {
         item_id: `simulated-${Date.now()}`,
@@ -157,6 +175,11 @@ export default function TradeModal() {
   }
 
   const [activeHover, setActiveHover] = useState('');
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!modalData.moveOpen) setConfirmError(null);
+  }, [modalData.moveOpen]);
 
   async function handleOver(itemID: string) {
     if (activeHover != itemID) {
@@ -263,6 +286,12 @@ export default function TradeModal() {
                     </li>
                   ))}
                 </ul>
+
+                {confirmError ? (
+                  <p className="mt-3 rounded-md border border-red-500/40 bg-red-950/50 px-3 py-2 text-sm text-red-100/95" role="alert">
+                    {confirmError}
+                  </p>
+                ) : null}
 
                 <div className="mt-5 sm:mt-6 sm:grid sm:grid-flow-row-dense sm:grid-cols-2 sm:gap-3">
                   {doTransferFirst ? (

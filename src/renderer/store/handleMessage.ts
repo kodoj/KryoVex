@@ -12,6 +12,8 @@ export async function handleUserEvent(message: any[], settings: any) {
   switch (statusCode) {
     case 1:
       const subMessage = message[2];
+      // Yield one microtask so the UI can paint (tab switch / nav) before heavy combine work.
+      await Promise.resolve();
       const combined = combineInventory(subMessage[1], settings);
       return inventorySetInventory({ inventory: subMessage[1], combinedInventory: combined });
     case 2:

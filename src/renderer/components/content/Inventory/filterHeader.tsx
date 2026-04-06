@@ -5,7 +5,7 @@ import {
   FunnelIcon,
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/solid';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import  { clearAll,
   inventoryFiltersSetSearch,
@@ -37,19 +37,26 @@ export default function content() {
   const pricesResult = useSelector(selectPricing);
   const settingsData = useSelector(selectSettings);
 
-  // Build the "Majors" filter list once inventory is available.
-  // This must NOT run during render (it can cause repeated state updates and UI hangs).
+  const combinedInvRef = useRef(inventory.combinedInventory);
+  combinedInvRef.current = inventory.combinedInventory;
+
+  // Build "Majors" off the hot path: debounce so rapid GC / storage updates coalesce.
   useEffect(() => {
     if (!inventory?.combinedInventory || inventory.combinedInventory.length === 0) return;
     let cancelled = false;
-    addMajorsFilters(inventory.combinedInventory).then((returnValue) => {
-      if (cancelled) return;
-      ClassFilters.loadFilter(returnValue, true);
-    });
+    const t = window.setTimeout(() => {
+      const cur = combinedInvRef.current;
+      if (!cur || cur.length === 0 || cancelled) return;
+      addMajorsFilters(cur).then((returnValue) => {
+        if (cancelled) return;
+        ClassFilters.loadFilter(returnValue, true);
+      });
+    }, 320);
     return () => {
       cancelled = true;
+      window.clearTimeout(t);
     };
-  }, [inventory?.combinedInventory]);
+  }, [inventory.combinedInventory]);
 
   async function clear_all() {
     dispatch(clearAll());

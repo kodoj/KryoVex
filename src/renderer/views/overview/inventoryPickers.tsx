@@ -20,6 +20,11 @@ import { selectSettings } from 'renderer/store/slices/settings.ts';
 import { setRenameModal } from 'renderer/store/slices/modalRename.ts';
 import { pricingInventoryKey } from 'renderer/functionsClasses/prices.ts';
 
+const RARITY_BG_BY_NAME: Record<string, string> = (() => {
+  const m: Record<string, string> = {};
+  for (const r of itemRarities) m[r.value] = r.bgColorClass;
+  return m;
+})();
 
 const overviewSortBtn = classNames(
   focusRingBtn,
@@ -38,73 +43,72 @@ function content() {
 
   const dispatch = useDispatch();
 
+  const finalInventoryToUse = useMemo(() => {
+    const finalList: Record<string, ItemRow[]> = {};
+    for (const element of inventory.inventory) {
+      (finalList[element.item_name] ??= []).push(element);
+    }
 
-
-  // Convert to dict for easier match
-    let finalList = {};
-    inventory.inventory.forEach(element => {
-      if (finalList[element.item_name] == undefined) {
-        finalList[element.item_name] = [element]
+    let merged: ItemRow[] = [];
+    const seenNames: string[] = [];
+    for (const projectRow of inventoryFilters.inventoryFiltered) {
+      const group = finalList[projectRow.item_name];
+      if (group != undefined && seenNames.includes(projectRow.item_name) == false) {
+        merged = merged.concat(group);
+        seenNames.push(projectRow.item_name);
       }
-      else {
-        let listToUse = finalList[element.item_name];
-        listToUse.push(element)
-        finalList[element.item_name] = listToUse
-      }
-    });
+    }
 
-    // Inventory to use
-    let finalInventoryToUse = [] as any;
-    let seenNames = [] as string[];
-    inventoryFilters.inventoryFiltered.forEach((projectRow) => {
-      if (finalList[projectRow.item_name] != undefined && seenNames.includes(projectRow.item_name) == false) {
-        finalInventoryToUse = [...finalInventoryToUse, ...finalList[projectRow.item_name]]
-        seenNames.push(projectRow.item_name)
-      }
-    })
-
-    finalInventoryToUse = finalInventoryToUse.filter(function (item) {
-    if (!item.tradeUpConfirmed) {
-      return false;
-    }
-    if (tradeUpData.MinFloat > item.item_paint_wear || tradeUpData.MaxFloat < item.item_paint_wear) {
-      return false;
-    }
-    if (tradeUpData.tradeUpProductsIDS.includes(item.item_id)) {
-      return false;
-    }
-    if (tradeUpData.collections.length > 0 && !tradeUpData.collections.includes(item?.collection)) {
-      return false;
-    }
-    if (tradeUpData.options.includes('Hide equipped')) {
-      if (item.equipped_t || item.equipped_ct) {
+    merged = merged.filter(function (item) {
+      if (!item.tradeUpConfirmed) {
         return false;
       }
-    }
-    if (tradeUpData.tradeUpProducts.length != 0) {
-      let restrictRarity = tradeUpData.tradeUpProducts[0].rarityName
-      let restrictStattrak = tradeUpData.tradeUpProducts[0].stattrak
-      if (item.rarityName != restrictRarity) {
-        return false
+      const wear = item.item_paint_wear ?? 0;
+      if (tradeUpData.MinFloat > wear || tradeUpData.MaxFloat < wear) {
+        return false;
       }
-      if (item.stattrak != restrictStattrak) {
-        return false
+      if (tradeUpData.tradeUpProductsIDS.includes(item.item_id)) {
+        return false;
       }
-    }
+      if (tradeUpData.collections.length > 0 && !tradeUpData.collections.includes(item?.collection)) {
+        return false;
+      }
+      if (tradeUpData.options.includes('Hide equipped')) {
+        if (item.equipped_t || item.equipped_ct) {
+          return false;
+        }
+      }
+      if (tradeUpData.tradeUpProducts.length != 0) {
+        let restrictRarity = tradeUpData.tradeUpProducts[0].rarityName;
+        let restrictStattrak = tradeUpData.tradeUpProducts[0].stattrak;
+        if (item.rarityName != restrictRarity) {
+          return false;
+        }
+        if (item.stattrak != restrictStattrak) {
+          return false;
+        }
+      }
 
-    if (item.tradeUp) {
-      return true;
-    }
-    return false;
-  });
+      if (item.tradeUp) {
+        return true;
+      }
+      return false;
+    });
 
-  let itemR = {}
-  itemRarities.forEach(element => {
-    itemR[element.value] = element.bgColorClass
-  });
-  finalInventoryToUse.forEach(element => {
-    element['rarityColor'] =itemR[element.rarityName]
-  });
+    for (const element of merged) {
+      element['rarityColor'] = RARITY_BG_BY_NAME[element.rarityName];
+    }
+    return merged;
+  }, [
+    inventory.inventory,
+    inventoryFilters.inventoryFiltered,
+    tradeUpData.MinFloat,
+    tradeUpData.MaxFloat,
+    tradeUpData.tradeUpProductsIDS,
+    tradeUpData.collections,
+    tradeUpData.options,
+    tradeUpData.tradeUpProducts,
+  ]);
 
   useEffect(() => {
     const pricesToGet: ItemRow[] = [];
