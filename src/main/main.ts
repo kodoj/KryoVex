@@ -23,6 +23,7 @@ import SteamUser from 'steam-user';
 import GlobalOffensive from 'globaloffensive';
 import ByteBuffer from 'bytebuffer';
 import fetchItems from './helpers/classes/steam/items/getCommands.ts';
+import { buildCraftPayload, startCodexTradeupBridge } from './helpers/codexTradeupBridge.ts';
 import { createCSGOImage } from '@/functionsClasses/createCSGOImage.ts';
 import { ItemRow } from '@/interfaces/items.ts';
 
@@ -114,6 +115,7 @@ ipcMain.on('ipc-example', async (event, arg) => {
 
 let eventQueue: any[] = [];
 let rendererReady = false;
+let codexTradeupBridgeStarted = false;
 
 // Registered once: fetch avatar using current logged-in SteamUser.
 ipcMain.handle('get-steam-profile-image', async (_event, steamID) => {
@@ -794,6 +796,22 @@ async function startEvents(cs2: GlobalOffensive, user: SteamUser) {
       console.error('Pricing handler error:', err);
     }
   });
+
+  async function sendCraftOrder(idsToProcess: string[], rarityToUse: number) {
+    const craftPayload = buildCraftPayload(idsToProcess, rarityToUse);
+    const idsToUse = craftPayload.assetIds.map((id: string) => parseInt(id));
+    const tradeupPayLoad = new ByteBuffer(1 + 2 + idsToUse.length * 8, ByteBuffer.LITTLE_ENDIAN);
+    tradeupPayLoad.append(craftPayload.rarityHex, 'hex');
+    for (const id of idsToUse) {
+      tradeupPayLoad.writeUint64(id);
+    }
+    await (cs2 as any)._send(Language.Craft, null, tradeupPayLoad);
+  }
+
+  if (!codexTradeupBridgeStarted) {
+    startCodexTradeupBridge((assetIds, rarity) => sendCraftOrder(assetIds, rarity));
+    codexTradeupBridgeStarted = true;
+  }
   
   ipcMain.on('processTradeOrder', async (_event, idsToProcess, rarityToUse) => {
     const envDry = ['1', 'true', 'yes'].includes(
@@ -817,25 +835,7 @@ async function startEvents(cs2: GlobalOffensive, user: SteamUser) {
       );
       return;
     }
-    const rarObject = {
-      0: '00000A00',
-      1: '01000A00',
-      2: '02000A00',
-      3: '03000A00',
-      4: '04000A00',
-      10: '0a000a00',
-      11: '0b000a00',
-      12: '0c000a00',
-      13: '0d000a00',
-      14: '0e000a00',
-    };
-    const idsToUse = idsToProcess.map((id: string) => parseInt(id));
-    const tradeupPayLoad = new ByteBuffer(1 + 2 + idsToUse.length * 8, ByteBuffer.LITTLE_ENDIAN);
-    tradeupPayLoad.append(rarObject[rarityToUse], 'hex');
-    for (const id of idsToUse) {
-      tradeupPayLoad.writeUint64(id);
-    }
-    await (cs2 as any)._send(Language.Craft, null, tradeupPayLoad);
+    await sendCraftOrder(idsToProcess, rarityToUse);
   });
 
   // Open container
