@@ -14,7 +14,18 @@ export async function handleUserEvent(message: any[], settings: any) {
       const subMessage = message[2];
       // Yield one microtask so the UI can paint (tab switch / nav) before heavy combine work.
       await Promise.resolve();
+      window.electron.ipcRenderer.debugLog('handleUserEvent:combine-start', {
+        description,
+        rawCount: subMessage?.[1]?.length ?? -1,
+        firstItemName: subMessage?.[1]?.[0]?.item_name ?? null,
+        firstItemUrl: subMessage?.[1]?.[0]?.item_url ?? null,
+      });
       const combined = combineInventory(subMessage[1], settings);
+      window.electron.ipcRenderer.debugLog('handleUserEvent:combine-done', {
+        description,
+        rawCount: subMessage?.[1]?.length ?? -1,
+        combinedCount: combined?.length ?? -1,
+      });
       return inventorySetInventory({ inventory: subMessage[1], combinedInventory: combined });
     case 2:
       if (description === 'disconnected') {

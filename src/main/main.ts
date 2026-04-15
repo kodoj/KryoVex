@@ -24,6 +24,7 @@ import GlobalOffensive from 'globaloffensive';
 import ByteBuffer from 'bytebuffer';
 import fetchItems from './helpers/classes/steam/items/getCommands.ts';
 import { buildCraftPayload, startCodexTradeupBridge } from './helpers/codexTradeupBridge.ts';
+import { evaluateTradeupExecutionPolicy } from './helpers/tradeupExecutionPolicy.ts';
 import { createCSGOImage } from '@/functionsClasses/createCSGOImage.ts';
 import { ItemRow } from '@/interfaces/items.ts';
 
@@ -485,6 +486,14 @@ ipcMain.handle('check-steam', async () => {
   return false;
 });
 
+ipcMain.on('renderer-log', (_event, scope, payload) => {
+  try {
+    console.log(`[renderer] ${String(scope || 'log')}`, payload);
+  } catch (error) {
+    console.log('[renderer] log_failed', error);
+  }
+});
+
 ipcMain.handle('close-steam', async () => {
   const pid = await checkSteam();
   if (pid.status) {
@@ -526,8 +535,14 @@ emitterAccount.on(
           console.log('Connected to GC!');
           if (cs2.haveGCSession) {
             console.log('Have Session!');
-            fetchItemClass.convertInventory(cs2.inventory).then((returnValue) => {
-              tradeUpClass.getTradeUp(returnValue).then((newReturnValue) => {
+            fetchItemClass.convertInventory(cs2.inventory)
+              .then((returnValue) => {
+                console.log('[inventory] initial convert success', {
+                  converted: returnValue.length,
+                });
+                return tradeUpClass.getTradeUp(returnValue);
+              })
+              .then((newReturnValue) => {
                 const rows = newReturnValue as ItemRow[];
                 let walletToSend = user.wallet;
                 if (walletToSend) {
@@ -554,8 +569,13 @@ emitterAccount.on(
                 ClassLoginResponse.setResponseStatus('loggedIn');
                 ClassLoginResponse.setPackage(returnPackage);
                 sendLoginReply(event);
+              })
+              .catch((error) => {
+                console.error('[inventory] initial inventory load failed', error);
+                ClassLoginResponse.setEmptyPackage();
+                ClassLoginResponse.setResponseStatus('defaultError');
+                sendLoginReply(event);
               });
-            });
           }
         });
       }
@@ -808,34 +828,62 @@ async function startEvents(cs2: GlobalOffensive, user: SteamUser) {
     await (cs2 as any)._send(Language.Craft, null, tradeupPayLoad);
   }
 
-  if (!codexTradeupBridgeStarted) {
-    startCodexTradeupBridge((assetIds, rarity) => sendCraftOrder(assetIds, rarity));
-    codexTradeupBridgeStarted = true;
-  }
-  
-  ipcMain.on('processTradeOrder', async (_event, idsToProcess, rarityToUse) => {
+  async function executeCraftOrder(
+    idsToProcess: string[],
+    rarityToUse: number,
+    options: { ignoreSimulateOnly?: boolean } = {},
+  ) {
     const envDry = ['1', 'true', 'yes'].includes(
       String(process.env.KRYOVEX_TRADEUP_DRY_RUN || '').toLowerCase()
     );
     const simulateOnly = (await getValue('tradeUpSimulateOnly')) !== false;
-    if (envDry || simulateOnly) {
-      log.info(
-        '[trade up] Skipped CS2 craft (simulate-only or KRYOVEX_TRADEUP_DRY_RUN). No items were consumed.'
-      );
-      return;
-    }
-    // Extra safety in development: real crafts need an explicit opt-in (production unchanged).
     const isDev = isUnpackagedDevSession();
     const allowRealInDev = ['1', 'true', 'yes'].includes(
       String(process.env.KRYOVEX_ALLOW_REAL_TRADEUP || '').toLowerCase()
     );
-    if (isDev && !allowRealInDev) {
-      log.warn(
-        '[trade up] Development build: blocked real CS2 craft. Set KRYOVEX_ALLOW_REAL_TRADEUP=1 to test real trade-ups, or use a production build.'
-      );
-      return;
+
+    const policy = evaluateTradeupExecutionPolicy({
+      envDry,
+      simulateOnly,
+      isDev,
+      allowRealInDev,
+      ignoreSimulateOnly: options.ignoreSimulateOnly === true,
+    });
+
+    if (policy.mode === 'dry_run') {
+      if (policy.reason === 'simulate_only') {
+        log.info(
+          '[trade up] Skipped CS2 craft (simulate-only or KRYOVEX_TRADEUP_DRY_RUN). No items were consumed.'
+        );
+      } else {
+        log.warn(
+          '[trade up] Development build: blocked real CS2 craft. Set KRYOVEX_ALLOW_REAL_TRADEUP=1 to test real trade-ups, or use a production build.'
+        );
+      }
+      return {
+        accepted: true,
+        dryRun: true,
+        reason: policy.reason,
+      };
     }
+
     await sendCraftOrder(idsToProcess, rarityToUse);
+    return {
+      accepted: true,
+      dryRun: false,
+    };
+  }
+
+  if (!codexTradeupBridgeStarted) {
+    startCodexTradeupBridge(
+      (assetIds, rarity) => executeCraftOrder(assetIds, rarity, { ignoreSimulateOnly: true }),
+      (entry) => log.info('[codex-tradeup]', entry),
+    );
+    codexTradeupBridgeStarted = true;
+  }
+  
+  ipcMain.on('processTradeOrder', async (_event, idsToProcess, rarityToUse) => {
+    await executeCraftOrder(idsToProcess, rarityToUse);
   });
 
   // Open container
@@ -868,36 +916,45 @@ async function startEvents(cs2: GlobalOffensive, user: SteamUser) {
   cs2.on('itemRemoved', (item) => {
     if (!Object.keys(item).includes('casket_id') && !Object.keys(item).includes('casket_contained_item_count')) {
       console.log('Item ' + item.id + ' was removed');
-      fetchItemClass.convertInventory(cs2.inventory).then((returnValue) => {
-        (tradeUpClass.getTradeUp(returnValue) as Promise<ItemRow[]>).then((newReturnValue) => {
+      fetchItemClass.convertInventory(cs2.inventory)
+        .then((returnValue) => tradeUpClass.getTradeUp(returnValue) as Promise<ItemRow[]>)
+        .then((newReturnValue) => {
           const message = [1, 'itemRemoved', [item, newReturnValue]];
           sendOrQueueUserEvent(message);
+        })
+        .catch((error) => {
+          console.error('[inventory] itemRemoved refresh failed', error);
         });
-      });
     }
   });
 
   cs2.on('itemChanged', (item) => {
-    fetchItemClass.convertInventory(cs2.inventory).then((returnValue) => {
-      (tradeUpClass.getTradeUp(returnValue) as Promise<ItemRow[]>).then((newReturnValue) => {
+    fetchItemClass.convertInventory(cs2.inventory)
+      .then((returnValue) => tradeUpClass.getTradeUp(returnValue) as Promise<ItemRow[]>)
+      .then((newReturnValue) => {
         const message = [1, 'itemChanged', [item, newReturnValue]];
         sendOrQueueUserEvent(message);
+      })
+      .catch((error) => {
+        console.error('[inventory] itemChanged refresh failed', error);
       });
-    });
   });
 
   cs2.on('itemAcquired', (item) => {
     if (!Object.keys(item).includes('casket_id') && !Object.keys(item).includes('casket_contained_item_count')) {
       // console.log('Item ' + item.id + ' was acquired');
       removeInventoryListeners();
-      fetchItemClass.convertInventory(cs2.inventory).then((returnValue) => {
-        (tradeUpClass.getTradeUp(returnValue) as Promise<ItemRow[]>).then((newReturnValue) => {
+      fetchItemClass.convertInventory(cs2.inventory)
+        .then((returnValue) => tradeUpClass.getTradeUp(returnValue) as Promise<ItemRow[]>)
+        .then((newReturnValue) => {
           const message = [1, 'itemAcquired', [item, newReturnValue]];
           sendOrQueueUserEvent(message);
           // Pricing is driven by the renderer (`useAccountWidePricingRequest` + missing-only).
           // `handleItems(fullInventory)` here re-hit Steam for every unique on each acquire (429 spam).
+        })
+        .catch((error) => {
+          console.error('[inventory] itemAcquired refresh failed', error);
         });
-      });
     }
   });
 }
@@ -948,14 +1005,17 @@ async function startEvents(cs2: GlobalOffensive, user: SteamUser) {
 ipcMain.on('refreshInventory', async () => {
   removeInventoryListeners();
   startChangeEvents();
-  fetchItemClass.convertInventory(cs2.inventory).then((returnValue) => {
-    tradeUpClass.getTradeUp(returnValue).then((newReturnValue) => {
+  fetchItemClass.convertInventory(cs2.inventory)
+    .then((returnValue) => tradeUpClass.getTradeUp(returnValue))
+    .then((newReturnValue) => {
       const message = [1, 'itemAcquired', [{}, newReturnValue]];
       sendOrQueueUserEvent(message);
       // Do not call `pricing.handleItems(rows)` — that walks the full inventory on every refresh
       // and defeats missing-only / backup-fast-path logic in the renderer (terminal 429 loops).
+    })
+    .catch((error) => {
+      console.error('[inventory] refreshInventory failed', error);
     });
-  });
 });
 
   // Retry connection

@@ -4,6 +4,7 @@ import { Settings, Inventory, ModalMove } from 'renderer/interfaces/states.ts'; 
 import { AppDispatch } from '@/store/configureStore.ts';
 import { handleUserEvent } from '@/store/handleMessage.ts';
 import { selectAuth } from '@/store/slices/auth.ts';
+import { normalizeUserEventMessage } from './userEventMessage.ts';
 
 // Define expected message shape (refine based on handleUserEvent signature)
 type UserEventMessage = any[]; // E.g., [eventType: number, ...data]
@@ -60,10 +61,11 @@ export const useIpcUserEvents = (
     }
 
     const listener = async (...args: UserEventMessage) => {
+      const message = normalizeUserEventMessage(args);
       if (process.env.NODE_ENV === 'development') {
         console.log(
           'Received userEvents args:',
-          args,
+          message,
           'Is loggedIn:',
           isLoggedIn,
           'Mounted:',
@@ -80,17 +82,30 @@ export const useIpcUserEvents = (
       }
 
       // Validate message
-      if (!args || !Array.isArray(args)) {
-        console.warn('Invalid userEvents message format:', args);
+      if (!message || !Array.isArray(message)) {
+        console.warn('Invalid userEvents message format:', message);
         return;
       }
 
       try {
-        const actionToTake = await handleUserEvent(args, settingsRef.current);
+        window.electron.ipcRenderer.debugLog('userEvents:received', {
+          firstArgType: typeof message[0],
+          firstArgIsArray: Array.isArray(message[0]),
+          argCount: message.length,
+          statusCode: message[0],
+          description: message[1],
+        });
+        const actionToTake = await handleUserEvent(message, settingsRef.current);
         if (actionToTake) {
+          const payload = (actionToTake as any).payload;
+          window.electron.ipcRenderer.debugLog('userEvents:dispatch', {
+            actionType: (actionToTake as any).type,
+            inventoryCount: payload?.inventory?.length ?? -1,
+            combinedCount: payload?.combinedInventory?.length ?? -1,
+          });
           dispatch(actionToTake);
           // Defer filter/sort to the next task so inventory can commit and the UI can stay responsive.
-          if (args[0] === 1 && handleFilterDataRef.current) {
+          if (message[0] === 1 && handleFilterDataRef.current) {
             const inv = (actionToTake.payload as any)?.combinedInventory || [];
             window.setTimeout(() => {
               void handleFilterDataRef.current?.(inv);
@@ -98,6 +113,12 @@ export const useIpcUserEvents = (
           }
         }
       } catch (error) {
+        window.electron.ipcRenderer.debugLog('userEvents:error', {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : null,
+          statusCode: message?.[0],
+          description: message?.[1],
+        });
         console.error('Error processing userEvent:', error);
       }
     };

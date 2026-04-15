@@ -2,6 +2,7 @@ import { StartLoginSessionWithCredentialsDetails } from 'steam-session/dist/inte
 import SteamTotp from 'steam-totp';
 import { flowLoginRegular } from '../../login/loginRegular.tsx';
 import { LoginGenerator } from '../IPCGenerators/loginGenerator.tsx';
+import { LoginOptions } from '../../../../shared/Interfaces-tsx/store.ts';
 import {
   getLoginDetails,
   getRefreshToken,
@@ -28,6 +29,12 @@ class login {
   loginOptionsLegacy = {} as any;
   resolve;
 
+  _failLogin(responseStatus: keyof LoginOptions = 'defaultError') {
+    ClassLoginResponse.setEmptyPackage();
+    ClassLoginResponse.setResponseStatus(responseStatus);
+    this._returnToSender();
+  }
+
 
 
   mainLogin(
@@ -53,26 +60,34 @@ class login {
 
 
       // Get all account details
-      getValue('account').then((returnValue) => {
-        if (returnValue?.[username]) {
-          this.rememberedDetails = returnValue?.[username];
-          if (returnValue?.[username].safeData) {
-            // Get remembered details
-            getLoginDetails(username).then((returnValue) => {
-              if (returnValue) {
-                this.rememberedSensitive = returnValue;
-                this._loginCoordinator();
-              }
-            });
-          } else {
-            // Start login
-            this._loginCoordinator();
+      getValue('account')
+        .then((returnValue) => {
+          if (returnValue?.[username]) {
+            this.rememberedDetails = returnValue?.[username];
+            if (returnValue?.[username].safeData) {
+              // Get remembered details
+              getLoginDetails(username)
+                .then((rememberedValue) => {
+                  if (rememberedValue) {
+                    this.rememberedSensitive = rememberedValue;
+                  }
+                  this._loginCoordinator();
+                })
+                .catch((error) => {
+                  console.error('[login] getLoginDetails failed', error);
+                  this._failLogin();
+                });
+              return;
+            }
           }
-        } else {
+
           // Start login
           this._loginCoordinator();
-        }
-      });
+        })
+        .catch((error) => {
+          console.error('[login] getValue(account) failed', error);
+          this._failLogin();
+        });
     });
   }
 
@@ -121,32 +136,28 @@ class login {
   }
 
   _loginStart() {
-    flowLoginRegular(this.logInOptions, this.shouldRemember).then(
-      (returnValue) => {
+    flowLoginRegular(this.logInOptions, this.shouldRemember)
+      .then((returnValue) => {
         if (returnValue.responseStatus == 'loggedIn') {
-
           this.steamUser.logOn({
             refreshToken: returnValue.refreshToken,
           });
         } else {
-          ClassLoginResponse.setEmptyPackage();
-          ClassLoginResponse.setResponseStatus(returnValue.responseStatus);
-          this._returnToSender();
+          this._failLogin(returnValue.responseStatus);
         }
-      }
-    );
+      })
+      .catch((error) => {
+        console.error('[login] flowLoginRegular failed', error);
+        this._failLogin();
+      });
   }
 
   _defaultError() {
     this.steamUser.once('error', (error) => {
       if (error == 'Error: LoggedInElsewhere') {
-        ClassLoginResponse.setEmptyPackage();
-        ClassLoginResponse.setResponseStatus('playingElsewhere');
-        this._returnToSender();
+        this._failLogin('playingElsewhere');
       } else {
-        ClassLoginResponse.setEmptyPackage();
-        ClassLoginResponse.setResponseStatus('defaultError');
-        this._returnToSender();
+        this._failLogin();
       }
     });
   }
@@ -169,10 +180,15 @@ class login {
       this._loginStartLegacy();
       return;
     }
-    getRefreshToken(this.username).then((refreshToken) => {
-      this.loginOptionsLegacy = { refreshToken };
-      this._loginStartLegacy();
-    });
+    getRefreshToken(this.username)
+      .then((refreshToken) => {
+        this.loginOptionsLegacy = { refreshToken };
+        this._loginStartLegacy();
+      })
+      .catch((error) => {
+        console.error('[login] getRefreshToken failed', error);
+        this._failLogin();
+      });
   }
 
   // 2 - Shared Secret

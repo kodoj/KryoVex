@@ -6,6 +6,7 @@ import { selectPricing } from 'renderer/store/slices/pricing.ts';
 import { selectSettings } from 'renderer/store/slices/settings.ts';
 import { store } from 'renderer/store/configureStore.ts';
 import type { RootState } from 'renderer/store/rootReducer.ts';
+import { isAutoPricingEnabled } from 'renderer/pricing/autoPricing.ts';
 
 /**
  * One place to queue Steam price lookups for the whole account (inventory + loaded storage).
@@ -34,6 +35,7 @@ export function useAccountWidePricingRequest() {
   }, [pricingData, settingsData]);
 
   useEffect(() => {
+    if (!isAutoPricingEnabled()) return;
     if (!isLoggedIn) {
       lastKeyRef.current = '';
       prevStorLenRef.current = null;
@@ -42,6 +44,7 @@ export function useAccountWidePricingRequest() {
   }, [isLoggedIn]);
 
   useEffect(() => {
+    if (!isAutoPricingEnabled()) return;
     if (!isLoggedIn) return;
 
     const bulkJustEnded = prevBulkRef.current === true && bulkActive === false;

@@ -38,6 +38,7 @@ import { selectInventoryFilters } from 'renderer/store/slices/inventoryFilters.t
 import { selectPricing } from 'renderer/store/slices/pricing.ts';
 import { selectSettings } from 'renderer/store/slices/settings.ts';
 import { selectAuth } from 'renderer/store/slices/auth.ts';
+import { isAutoPricingEnabled } from 'renderer/pricing/autoPricing.ts';
 
 type InvTableRowProps = {
   projectRow: any;
@@ -183,6 +184,27 @@ function content() {
 
   const visibleRows = useMemo(() => finalToUse.slice(0, visibleCount), [finalToUse, visibleCount]);
 
+  useEffect(() => {
+    window.electron.ipcRenderer.debugLog('inventoryRows:state', {
+      rawInventoryCount: inventory.inventory?.length ?? -1,
+      combinedInventoryCount: inventory.combinedInventory?.length ?? -1,
+      filteredInventoryCount: inventoryFilters.inventoryFiltered?.length ?? -1,
+      inventoryFilterCount: inventoryFilters.inventoryFilter?.length ?? -1,
+      finalCount: finalToUse?.length ?? -1,
+      visibleCount: visibleRows?.length ?? -1,
+      isLoggedIn: usrDetails?.isLoggedIn ?? false,
+      hasGc: usrDetails?.CSGOConnection ?? false,
+    });
+  }, [
+    inventory.inventory,
+    inventory.combinedInventory,
+    inventoryFilters.inventoryFiltered,
+    inventoryFilters.inventoryFilter,
+    finalToUse,
+    visibleRows,
+    usrDetails,
+  ]);
+
   useLayoutEffect(() => {
     if (didAutoFitRef.current) return;
     if (colWidths && Object.keys(colWidths).length > 0) return;
@@ -230,6 +252,7 @@ function content() {
   const pricesRef = useRef(pricesResult);
   pricesRef.current = pricesResult;
   useEffect(() => {
+    if (!isAutoPricingEnabled()) return;
     const source = settingsData?.source?.title;
     if (!source) return;
     if (visibleRows.length === 0) return;

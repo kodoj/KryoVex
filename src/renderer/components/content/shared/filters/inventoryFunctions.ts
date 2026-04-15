@@ -2,6 +2,7 @@
 import { setSort } from 'renderer/store/slices/inventoryFilters.ts';
 import { itemCategories, itemSubCategories } from '../categories.tsx';
 import { ItemRow, ItemRowStorage, Prices, SubPrices } from 'renderer/interfaces/states.ts';
+import { safeIncludes, safeMatch, safeString } from '@/utils/safeString.ts';
 
 // Type alias for clarity: assuming Inventory is a state object, but functions operate on arrays
 type InventoryArray = Array<ItemRow | ItemRowStorage>; // Use this for list params/returns
@@ -11,7 +12,7 @@ function getCategory(toLoopThrough: InventoryArray, additionalObjectToAdd: Recor
   let returnArray: InventoryArray = [];
   let itemIdsFiltered: Array<string> = [];
   for (const [, value] of Object.entries(itemCategories)) {
-    let result = toLoopThrough.filter(itemRow => itemRow.item_url.includes(value.value));
+    let result = toLoopThrough.filter(itemRow => safeIncludes(itemRow.item_url, value.value));
     result = result.map((el) => {
       itemIdsFiltered.push(el.item_id)
       let o = { ...el }; // Modern spread for object copy
@@ -19,7 +20,7 @@ function getCategory(toLoopThrough: InventoryArray, additionalObjectToAdd: Recor
       o.bgColorClass = value.bgColorClass
       // Major
       const majorRegex = new RegExp('(?:' + Object.keys(itemSubCategories.majors).join('|') + ')', 'g')
-      const majorMatch = el.item_name.match(majorRegex);
+      const majorMatch = safeMatch(el.item_name, majorRegex);
       if (majorMatch) {
         o.major = majorMatch[0]
       }
@@ -48,7 +49,7 @@ export default function combineInventory(thisInventory: InventoryArray, settings
     let valueConditions =
       value['item_name'] +
       (value['item_customname'] ?? '') +  // Coerce null to '' for consistency
-      value['item_url'] +
+      safeString(value['item_url']) +
       value['trade_unlock'] +
       value['item_moveable'] +
       value['item_has_stickers'] +
@@ -64,7 +65,7 @@ export default function combineInventory(thisInventory: InventoryArray, settings
         let itemConditions =
           item['item_name'] +
           (item['item_customname'] ?? '') +  // Coerce null to ''
-          item['item_url'] +
+          safeString(item['item_url']) +
           item['trade_unlock'] +
           item['item_moveable'] +
           item['item_has_stickers'] +
@@ -102,7 +103,7 @@ export function filterInventory(
     let valued = value.substring(1);
     // Second filter
     if (command === '2') {
-      filteredInventory = filteredInventory.filter((item) => item.item_url.includes(valued)); // Simplified includes
+      filteredInventory = filteredInventory.filter((item) => safeIncludes(item.item_url, valued)); // Simplified includes
     }
   }
   // First and third check
@@ -128,7 +129,7 @@ export function filterInventory(
           return true;
         }
         if (valued === 'econ/tools/casket') {
-          return !item.item_url.includes(valued);
+          return !safeIncludes(item.item_url, valued);
         }
         return false;
       });
@@ -136,7 +137,7 @@ export function filterInventory(
     if (command === '4') {
       filteredInventory = filteredInventory.filter((item) => {
         if (valued === 'econ/tools/casket') {
-          return item.item_url.includes(valued);
+          return safeIncludes(item.item_url, valued);
         }
         return false;
       });

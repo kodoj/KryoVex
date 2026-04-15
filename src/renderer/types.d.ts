@@ -14,6 +14,7 @@ declare global {
         setItemsPosition: (dictToUse: any) => void;
         OpenContainer: (listToUse: any) => void;
         retryConnection: () => void;
+        debugLog: (scope: string, payload?: unknown) => void;
         logUserOut: () => void;
         handleWindowsActions: (action_type: any) => void;
         forceLogin: () => void;

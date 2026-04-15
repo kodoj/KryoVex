@@ -132,6 +132,9 @@ contextBridge.exposeInMainWorld('electron', {
     retryConnection() {
       ipcRenderer.send('retryConnection');
     },
+    debugLog(scope, payload) {
+      ipcRenderer.send('renderer-log', scope, payload);
+    },
     // User commands
     logUserOut() {
       ipcRenderer.send('signOut');

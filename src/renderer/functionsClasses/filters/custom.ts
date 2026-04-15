@@ -1,5 +1,6 @@
 import { Filter } from "renderer/interfaces/filters.ts";
 import { ItemRow } from "renderer/interfaces/items.ts";
+import { safeIncludes } from "@/utils/safeString.ts";
 
 
 class CheckFilter {
@@ -13,7 +14,7 @@ class CheckFilter {
 
     // Check if string is in URL
     CheckVariableIncludes(variableName: string): boolean {
-        return this.itemRow?.[variableName]?.includes(this.filter.valueToCheck)
+        return safeIncludes(this.itemRow?.[variableName], this.filter.valueToCheck)
     }
 
     // Check if variable exists and boolean
@@ -56,8 +57,8 @@ function filterLogic(itemRow: ItemRow, IndividualFilter: Filter): boolean {
 
         case 'checkCapsule':
             returnValue = FilterClass.checkContainerSubValue('item_name')
-            if (itemRow.item_name.includes('Challengers') || itemRow.item_name.includes('Legends') || itemRow.item_name.includes('Contenders')) {
-                if (!itemRow.item_name.includes('Patch')) {
+            if (safeIncludes(itemRow.item_name, 'Challengers') || safeIncludes(itemRow.item_name, 'Legends') || safeIncludes(itemRow.item_name, 'Contenders')) {
+                if (!safeIncludes(itemRow.item_name, 'Patch')) {
                     returnValue = true;
 
                 }
